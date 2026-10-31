@@ -375,7 +375,7 @@ export default function BillingPage({ onBillCreated, nextBillNo }) {
   };
 
   return (
-    <div className="page-content" style={{ maxWidth: '1440px', padding: '12px 18px' }}>
+    <div className="page-content" style={{ width: '100%', maxWidth: '100%', padding: '10px 14px', boxSizing: 'border-box' }}>
       <form onSubmit={handleSubmitBill} className="billing-layout">
         
         {/* TOP TWO SIDE-BY-SIDE COMPACT BOXES */}
@@ -990,20 +990,20 @@ export default function BillingPage({ onBillCreated, nextBillNo }) {
 
       </form>
 
-      {/* RECENT INVOICES REGISTER (COMPLETES AND BALANCES FULL PAGE) */}
-      <div className="card" style={{ padding: 0, overflow: 'hidden', marginTop: '16px', borderRadius: '10px' }}>
-        <div className="card-header" style={{ padding: '12px 20px', margin: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#fbfdfb', borderBottom: '1px solid #e8f0ea' }}>
-          <div className="card-title" style={{ fontSize: '13.5px', fontWeight: 800, color: '#064e3b', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <FileText size={16} color="#059669" />
+      {/* RECENT INVOICES REGISTER (COMPACT & CONTAINED) */}
+      <div className="card" style={{ width: '100%', maxWidth: '100%', padding: 0, overflow: 'hidden', marginTop: '10px', borderRadius: '8px', boxSizing: 'border-box' }}>
+        <div className="card-header" style={{ padding: '8px 14px', margin: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#fbfdfb', borderBottom: '1px solid #e8f0ea' }}>
+          <div className="card-title" style={{ fontSize: '13px', fontWeight: 800, color: '#064e3b', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <FileText size={15} color="#059669" />
             <span>Recent Invoices Register</span>
           </div>
-          <span style={{ fontSize: '12px', color: '#52665a', fontWeight: 600 }}>
+          <span style={{ fontSize: '11.5px', color: '#52665a', fontWeight: 600 }}>
             Live billing log • Quick reprints & receipts
           </span>
         </div>
 
-        <div className="table-container" style={{ border: 'none', margin: 0, overflowX: 'auto' }}>
-          <table className="data-table" style={{ width: '100%', minWidth: '1850px' }}>
+        <div className="table-container" style={{ width: '100%', maxWidth: '100%', border: 'none', margin: 0, overflowX: 'auto', maxHeight: '240px', boxSizing: 'border-box' }}>
+          <table className="data-table" style={{ width: '100%', minWidth: '1100px' }}>
             <thead>
               <tr>
                 <th style={{ whiteSpace: 'nowrap', padding: '10px 12px' }}>Bill No.</th>

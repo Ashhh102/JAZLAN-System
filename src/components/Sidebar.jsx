@@ -2,14 +2,12 @@ import React from 'react';
 import { 
   Receipt, 
   FileText, 
-  Package,
+  Package, 
   Users, 
   Truck, 
   UserCheck, 
   Building2, 
-  PieChart,
-  ShieldCheck,
-  CreditCard
+  PieChart 
 } from 'lucide-react';
 
 export default function Sidebar({ activePage, setActivePage, counts = {} }) {
@@ -45,12 +43,11 @@ export default function Sidebar({ activePage, setActivePage, counts = {} }) {
               key={item.id}
               onClick={() => setActivePage(item.id)}
               className={`nav-link ${isActive ? 'active' : ''}`}
-              style={{ width: '100%', textAlign: 'left', background: 'none', border: 'none' }}
             >
               <Icon size={18} />
               <span>{item.label}</span>
               {item.badge && (
-                <span className="nav-badge" style={{ backgroundColor: isActive ? 'rgba(16, 185, 129, 0.35)' : 'rgba(255, 255, 255, 0.1)' }}>
+                <span className="nav-badge">
                   {item.badge}
                 </span>
               )}
@@ -64,10 +61,10 @@ export default function Sidebar({ activePage, setActivePage, counts = {} }) {
 
       <div className="sidebar-footer">
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#10b981' }}></div>
-          <span>SQLite Local DB</span>
+          <div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#10b981', boxShadow: '0 0 8px rgba(16, 185, 129, 0.6)' }}></div>
+          <span style={{ fontWeight: 600, color: '#334155' }}>Hostinger MySQL</span>
         </div>
-        <span style={{ fontSize: '11px', color: '#64748b' }}>v1.0.0</span>
+        <span style={{ fontSize: '11px', color: '#94a3b8' }}>v1.0.0</span>
       </div>
     </aside>
   );

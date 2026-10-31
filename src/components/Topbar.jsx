@@ -47,7 +47,7 @@ export default function Topbar({ activePage, setActivePage, onRefresh, nextBillN
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 12px', backgroundColor: '#f0fdf4', border: '1px solid #d1fae5', borderRadius: '6px', fontSize: '12px', fontWeight: 700, color: '#065f46' }}>
           <Database size={14} color="#059669" />
-          <span>Local SQLite</span>
+          <span>Hostinger MySQL</span>
         </div>
       </div>
     </header>

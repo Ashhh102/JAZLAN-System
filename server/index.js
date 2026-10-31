@@ -11,33 +11,33 @@ const {
 } = require('./db');
 
 const app = express();
-const PORT = process.env.PORT || 5001;
+const PORT = process.env.PORT || 5002;
 
 app.use(cors());
 app.use(express.json());
 
 // Initialize SQLite database
-initDatabase();
+initDatabase().catch(console.error);
 
 // -----------------------------------------------------------------------------
 // 1. PRODUCTS / MATERIALS API
 // -----------------------------------------------------------------------------
-app.get('/api/products', (req, res) => {
+app.get('/api/products', async (req, res) => {
   try {
-    const products = db.prepare('SELECT * FROM products ORDER BY name ASC').all();
+    const products = await db.prepare('SELECT * FROM products ORDER BY name ASC').all();
     res.json(products);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-app.post('/api/products', (req, res) => {
+app.post('/api/products', async (req, res) => {
   try {
     const { name, category, hsn_code, unit, default_sell_rate, default_bought_rate, gst_rate, stock_qty } = req.body;
     if (!name) return res.status(400).json({ error: 'Product name is required' });
 
     // Check if product already exists
-    const existing = db.prepare('SELECT * FROM products WHERE LOWER(TRIM(name)) = LOWER(TRIM(?))').get(name.trim());
+    const existing = await db.prepare('SELECT * FROM products WHERE LOWER(TRIM(name)) = LOWER(TRIM(?))').get(name.trim());
     if (existing) {
       const oldRate = Number(existing.default_bought_rate || 0);
       const newRate = Number(default_bought_rate || 0);
@@ -49,7 +49,7 @@ app.post('/api/products', (req, res) => {
           calculatedRate = newRate;
         }
       }
-      db.prepare(`
+      await db.prepare(`
         UPDATE products
         SET category = COALESCE(?, category),
             hsn_code = COALESCE(?, hsn_code),
@@ -71,11 +71,11 @@ app.post('/api/products', (req, res) => {
         existing.id
       );
 
-      const product = db.prepare('SELECT * FROM products WHERE id = ?').get(existing.id);
+      const product = await db.prepare('SELECT * FROM products WHERE id = ?').get(existing.id);
       return res.status(200).json(product);
     }
 
-    const info = db.prepare(`
+    const info = await db.prepare(`
       INSERT INTO products (name, category, hsn_code, unit, default_sell_rate, default_bought_rate, gst_rate, stock_qty)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
@@ -89,20 +89,20 @@ app.post('/api/products', (req, res) => {
       Number(stock_qty || 0)
     );
 
-    const product = db.prepare('SELECT * FROM products WHERE id = ?').get(info.lastInsertRowid);
+    const product = await db.prepare('SELECT * FROM products WHERE id = ?').get(info.lastInsertRowid);
     res.status(201).json(product);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-app.put('/api/products/:id', (req, res) => {
+app.put('/api/products/:id', async (req, res) => {
   try {
     const { id } = req.params;
     const { name, category, hsn_code, unit, default_sell_rate, default_bought_rate, gst_rate, stock_qty } = req.body;
     if (!name) return res.status(400).json({ error: 'Product name is required' });
 
-    db.prepare(`
+    await db.prepare(`
       UPDATE products
       SET name = ?, category = ?, hsn_code = ?, unit = ?, default_sell_rate = ?, default_bought_rate = ?, gst_rate = ?, stock_qty = ?
       WHERE id = ?
@@ -118,17 +118,17 @@ app.put('/api/products/:id', (req, res) => {
       id
     );
 
-    const product = db.prepare('SELECT * FROM products WHERE id = ?').get(id);
+    const product = await db.prepare('SELECT * FROM products WHERE id = ?').get(id);
     res.json(product);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-app.delete('/api/products/:id', (req, res) => {
+app.delete('/api/products/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    db.prepare('DELETE FROM products WHERE id = ?').run(id);
+    await db.prepare('DELETE FROM products WHERE id = ?').run(id);
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -138,9 +138,9 @@ app.delete('/api/products/:id', (req, res) => {
 // -----------------------------------------------------------------------------
 // 2. CUSTOMERS API
 // -----------------------------------------------------------------------------
-app.get('/api/customers', (req, res) => {
+app.get('/api/customers', async (req, res) => {
   try {
-    const customers = db.prepare(`
+    const customers = await db.prepare(`
       SELECT 
         c.*,
         (SELECT COUNT(*) FROM bills WHERE customer_id = c.id) as total_bills,
@@ -154,15 +154,15 @@ app.get('/api/customers', (req, res) => {
   }
 });
 
-app.get('/api/customers/:id', (req, res) => {
+app.get('/api/customers/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(id);
+    const customer = await db.prepare('SELECT * FROM customers WHERE id = ?').get(id);
     if (!customer) return res.status(404).json({ error: 'Customer not found' });
 
-    const bills = db.prepare('SELECT * FROM bills WHERE customer_id = ? ORDER BY id DESC').all(id);
-    const payments = db.prepare('SELECT * FROM customer_payments WHERE customer_id = ? ORDER BY id DESC').all(id);
-    const adjustments = db.prepare('SELECT * FROM customer_adjustments WHERE customer_id = ? ORDER BY id DESC').all(id);
+    const bills = await db.prepare('SELECT * FROM bills WHERE customer_id = ? ORDER BY id DESC').all(id);
+    const payments = await db.prepare('SELECT * FROM customer_payments WHERE customer_id = ? ORDER BY id DESC').all(id);
+    const adjustments = await db.prepare('SELECT * FROM customer_adjustments WHERE customer_id = ? ORDER BY id DESC').all(id);
 
     res.json({ customer, bills, payments, adjustments });
   } catch (err) {
@@ -170,49 +170,49 @@ app.get('/api/customers/:id', (req, res) => {
   }
 });
 
-app.post('/api/customers', (req, res) => {
+app.post('/api/customers', async (req, res) => {
   try {
     const { name, phone, address, gstin } = req.body;
     if (!name) return res.status(400).json({ error: 'Customer name is required' });
 
     // Check if customer already exists
-    const existing = db.prepare('SELECT * FROM customers WHERE LOWER(TRIM(name)) = LOWER(TRIM(?))').get(name.trim());
+    const existing = await db.prepare('SELECT * FROM customers WHERE LOWER(TRIM(name)) = LOWER(TRIM(?))').get(name.trim());
     if (existing) {
       return res.json(existing);
     }
 
-    const info = db.prepare(`
+    const info = await db.prepare(`
       INSERT INTO customers (name, phone, address, gstin)
       VALUES (?, ?, ?, ?)
     `).run(name.trim(), phone || '', address || '', gstin || '');
 
-    const customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(info.lastInsertRowid);
+    const customer = await db.prepare('SELECT * FROM customers WHERE id = ?').get(info.lastInsertRowid);
     res.status(201).json(customer);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-app.put('/api/customers/:id', (req, res) => {
+app.put('/api/customers/:id', async (req, res) => {
   try {
     const { id } = req.params;
     const { name, phone, address, gstin } = req.body;
 
-    db.prepare(`
+    await db.prepare(`
       UPDATE customers 
       SET name = ?, phone = ?, address = ?, gstin = ?, updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `).run(name.trim(), phone || '', address || '', gstin || '', id);
 
-    recalculateCustomer(id);
-    const customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(id);
+    await recalculateCustomer(id);
+    const customer = await db.prepare('SELECT * FROM customers WHERE id = ?').get(id);
     res.json(customer);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-app.post('/api/customers/:id/pay', (req, res) => {
+app.post('/api/customers/:id/pay', async (req, res) => {
   try {
     const { id } = req.params;
     const { amount, date, payment_mode, reference_no, notes } = req.body;
@@ -220,52 +220,52 @@ app.post('/api/customers/:id/pay', (req, res) => {
     if (!payAmt || payAmt <= 0) return res.status(400).json({ error: 'Valid payment amount is required' });
 
     const payDate = date || new Date().toISOString().split('T')[0];
-    const info = db.prepare(`
+    const info = await db.prepare(`
       INSERT INTO customer_payments (customer_id, date, amount, payment_mode, reference_no, notes)
       VALUES (?, ?, ?, ?, ?, ?)
     `).run(id, payDate, payAmt, payment_mode || 'Cash', reference_no || '', notes || '');
 
     // Record into accounts ledger
-    db.prepare(`
+    await db.prepare(`
       INSERT INTO accounts_ledger (date, type, category, reference_type, reference_id, amount, payment_mode, description)
       VALUES (?, 'Income', 'Customer Payment', 'CustomerPayment', ?, ?, ?, ?)
     `).run(payDate, info.lastInsertRowid, payAmt, payment_mode || 'Cash', `Payment from customer ID ${id}`);
 
-    recalculateCustomer(id);
-    const customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(id);
+    await recalculateCustomer(id);
+    const customer = await db.prepare('SELECT * FROM customers WHERE id = ?').get(id);
     res.json({ success: true, customer });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-app.post('/api/customers/:id/adjust', (req, res) => {
+app.post('/api/customers/:id/adjust', async (req, res) => {
   try {
     const { id } = req.params;
     const { amount, date, notes, type, ref_no } = req.body;
     const adjAmt = Number(amount);
     if (!adjAmt || adjAmt <= 0) return res.status(400).json({ error: 'Valid amount is required' });
 
-    db.prepare(`
+    await db.prepare(`
       INSERT INTO customer_adjustments (customer_id, date, type, ref_no, amount, notes)
       VALUES (?, ?, ?, ?, ?, ?)
     `).run(id, date || new Date().toISOString().split('T')[0], type || 'OPENING_BALANCE', ref_no || 'OPENING-BAL', adjAmt, notes || 'Opening Balance / Handover Dues');
 
-    recalculateCustomer(id);
-    const customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(id);
+    await recalculateCustomer(id);
+    const customer = await db.prepare('SELECT * FROM customers WHERE id = ?').get(id);
     res.json({ success: true, customer });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-app.delete('/api/customers/:id', (req, res) => {
+app.delete('/api/customers/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    db.prepare('DELETE FROM customer_payments WHERE customer_id = ?').run(id);
-    db.prepare('DELETE FROM customer_adjustments WHERE customer_id = ?').run(id);
-    db.prepare('DELETE FROM bills WHERE customer_id = ?').run(id);
-    db.prepare('DELETE FROM customers WHERE id = ?').run(id);
+    await db.prepare('DELETE FROM customer_payments WHERE customer_id = ?').run(id);
+    await db.prepare('DELETE FROM customer_adjustments WHERE customer_id = ?').run(id);
+    await db.prepare('DELETE FROM bills WHERE customer_id = ?').run(id);
+    await db.prepare('DELETE FROM customers WHERE id = ?').run(id);
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -275,9 +275,9 @@ app.delete('/api/customers/:id', (req, res) => {
 // -----------------------------------------------------------------------------
 // 3. VEHICLES API
 // -----------------------------------------------------------------------------
-app.get('/api/vehicles', (req, res) => {
+app.get('/api/vehicles', async (req, res) => {
   try {
-    const vehicles = db.prepare(`
+    const vehicles = await db.prepare(`
       SELECT 
         v.*,
         (SELECT COUNT(*) FROM bills WHERE vehicle_id = v.id) as total_trips,
@@ -291,14 +291,14 @@ app.get('/api/vehicles', (req, res) => {
   }
 });
 
-app.get('/api/vehicles/:id', (req, res) => {
+app.get('/api/vehicles/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const vehicle = db.prepare('SELECT * FROM vehicles WHERE id = ?').get(id);
+    const vehicle = await db.prepare('SELECT * FROM vehicles WHERE id = ?').get(id);
     if (!vehicle) return res.status(404).json({ error: 'Vehicle not found' });
 
-    const expenses = db.prepare('SELECT * FROM vehicle_expenses WHERE vehicle_id = ? ORDER BY date DESC, id DESC').all(id);
-    const trips = db.prepare('SELECT * FROM bills WHERE vehicle_id = ? ORDER BY date DESC').all(id);
+    const expenses = await db.prepare('SELECT * FROM vehicle_expenses WHERE vehicle_id = ? ORDER BY date DESC, id DESC').all(id);
+    const trips = await db.prepare('SELECT * FROM bills WHERE vehicle_id = ? ORDER BY date DESC').all(id);
 
     res.json({ vehicle, expenses, trips });
   } catch (err) {
@@ -306,12 +306,12 @@ app.get('/api/vehicles/:id', (req, res) => {
   }
 });
 
-app.post('/api/vehicles', (req, res) => {
+app.post('/api/vehicles', async (req, res) => {
   try {
     const { vehicle_number, model_type, capacity_tons, driver_name, driver_phone } = req.body;
     if (!vehicle_number) return res.status(400).json({ error: 'Vehicle number is required' });
 
-    const info = db.prepare(`
+    const info = await db.prepare(`
       INSERT INTO vehicles (vehicle_number, model_type, capacity_tons, driver_name, driver_phone)
       VALUES (?, ?, ?, ?, ?)
     `).run(
@@ -322,19 +322,19 @@ app.post('/api/vehicles', (req, res) => {
       driver_phone || ''
     );
 
-    const vehicle = db.prepare('SELECT * FROM vehicles WHERE id = ?').get(info.lastInsertRowid);
+    const vehicle = await db.prepare('SELECT * FROM vehicles WHERE id = ?').get(info.lastInsertRowid);
     res.status(201).json(vehicle);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-app.put('/api/vehicles/:id', (req, res) => {
+app.put('/api/vehicles/:id', async (req, res) => {
   try {
     const { id } = req.params;
     const { vehicle_number, model_type, capacity_tons, driver_name, driver_phone, status } = req.body;
 
-    db.prepare(`
+    await db.prepare(`
       UPDATE vehicles
       SET vehicle_number = ?, model_type = ?, capacity_tons = ?, driver_name = ?, driver_phone = ?, status = ?
       WHERE id = ?
@@ -348,18 +348,18 @@ app.put('/api/vehicles/:id', (req, res) => {
       id
     );
 
-    recalculateVehicle(id);
-    const vehicle = db.prepare('SELECT * FROM vehicles WHERE id = ?').get(id);
+    await recalculateVehicle(id);
+    const vehicle = await db.prepare('SELECT * FROM vehicles WHERE id = ?').get(id);
     res.json(vehicle);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-app.delete('/api/vehicles/:id', (req, res) => {
+app.delete('/api/vehicles/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    db.prepare('DELETE FROM vehicles WHERE id = ?').run(id);
+    await db.prepare('DELETE FROM vehicles WHERE id = ?').run(id);
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -367,7 +367,7 @@ app.delete('/api/vehicles/:id', (req, res) => {
 });
 
 // Add Vehicle Expense (+ Diesel, + Service, + Other)
-app.post('/api/vehicles/:id/expenses', (req, res) => {
+app.post('/api/vehicles/:id/expenses', async (req, res) => {
   try {
     const { id } = req.params;
     const {
@@ -392,7 +392,7 @@ app.post('/api/vehicles/:id/expenses', (req, res) => {
     const expDate = date || new Date().toISOString().split('T')[0];
     const expAmt = Number(amount);
 
-    const info = db.prepare(`
+    const info = await db.prepare(`
       INSERT INTO vehicle_expenses (
         vehicle_id, expense_type, date, amount, liters, rate_per_liter,
         service_type, garage_name, category, odometer_reading, payment_mode,
@@ -415,7 +415,7 @@ app.post('/api/vehicles/:id/expenses', (req, res) => {
     );
 
     // Ledger entry for accounts
-    db.prepare(`
+    await db.prepare(`
       INSERT INTO accounts_ledger (date, type, category, reference_type, reference_id, amount, payment_mode, description)
       VALUES (?, 'Expense', ?, 'VehicleExpense', ?, ?, ?, ?)
     `).run(
@@ -427,9 +427,9 @@ app.post('/api/vehicles/:id/expenses', (req, res) => {
       `Vehicle #${id} ${expense_type} expense: ₹${expAmt}`
     );
 
-    recalculateVehicle(id);
-    const updatedVehicle = db.prepare('SELECT * FROM vehicles WHERE id = ?').get(id);
-    const newExpense = db.prepare('SELECT * FROM vehicle_expenses WHERE id = ?').get(info.lastInsertRowid);
+    await recalculateVehicle(id);
+    const updatedVehicle = await db.prepare('SELECT * FROM vehicles WHERE id = ?').get(id);
+    const newExpense = await db.prepare('SELECT * FROM vehicle_expenses WHERE id = ?').get(info.lastInsertRowid);
 
     res.status(201).json({ success: true, vehicle: updatedVehicle, expense: newExpense });
   } catch (err) {
@@ -440,9 +440,9 @@ app.post('/api/vehicles/:id/expenses', (req, res) => {
 // -----------------------------------------------------------------------------
 // 4. EMPLOYEES API
 // -----------------------------------------------------------------------------
-app.get('/api/employees', (req, res) => {
+app.get('/api/employees', async (req, res) => {
   try {
-    const employees = db.prepare(`
+    const employees = await db.prepare(`
       SELECT 
         e.*,
         (SELECT COUNT(*) FROM employee_payments WHERE employee_id = e.id) as payment_count,
@@ -456,14 +456,14 @@ app.get('/api/employees', (req, res) => {
   }
 });
 
-app.post('/api/employees', (req, res) => {
+app.post('/api/employees', async (req, res) => {
   try {
     const { name, employee_type, phone, salary_type, base_salary, current_credit_balance, join_date } = req.body;
     if (!name || !employee_type) {
       return res.status(400).json({ error: 'Employee name and type are required' });
     }
 
-    const info = db.prepare(`
+    const info = await db.prepare(`
       INSERT INTO employees (name, employee_type, phone, salary_type, base_salary, current_credit_balance, join_date)
       VALUES (?, ?, ?, ?, ?, ?, ?)
     `).run(
@@ -476,19 +476,19 @@ app.post('/api/employees', (req, res) => {
       join_date || new Date().toISOString().split('T')[0]
     );
 
-    const employee = db.prepare('SELECT * FROM employees WHERE id = ?').get(info.lastInsertRowid);
+    const employee = await db.prepare('SELECT * FROM employees WHERE id = ?').get(info.lastInsertRowid);
     res.status(201).json(employee);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-app.put('/api/employees/:id', (req, res) => {
+app.put('/api/employees/:id', async (req, res) => {
   try {
     const { id } = req.params;
     const { name, employee_type, phone, salary_type, base_salary, current_credit_balance, status } = req.body;
 
-    db.prepare(`
+    await db.prepare(`
       UPDATE employees
       SET name = ?, employee_type = ?, phone = ?, salary_type = ?, base_salary = ?, current_credit_balance = ?, status = ?
       WHERE id = ?
@@ -503,7 +503,7 @@ app.put('/api/employees/:id', (req, res) => {
       id
     );
 
-    const employee = db.prepare('SELECT * FROM employees WHERE id = ?').get(id);
+    const employee = await db.prepare('SELECT * FROM employees WHERE id = ?').get(id);
     res.json(employee);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -511,7 +511,7 @@ app.put('/api/employees/:id', (req, res) => {
 });
 
 // Pay Salary / Advance / Credit to Employee
-app.post('/api/employees/:id/pay', (req, res) => {
+app.post('/api/employees/:id/pay', async (req, res) => {
   try {
     const { id } = req.params;
     const { amount, date, payment_type, month_year, payment_mode, notes } = req.body;
@@ -520,7 +520,7 @@ app.post('/api/employees/:id/pay', (req, res) => {
 
     const payDate = date || new Date().toISOString().split('T')[0];
 
-    const info = db.prepare(`
+    const info = await db.prepare(`
       INSERT INTO employee_payments (employee_id, date, payment_type, amount, month_year, payment_mode, notes)
       VALUES (?, ?, ?, ?, ?, ?, ?)
     `).run(
@@ -534,7 +534,7 @@ app.post('/api/employees/:id/pay', (req, res) => {
     );
 
     // If paying salary against pending balance, adjust current_credit_balance
-    const emp = db.prepare('SELECT * FROM employees WHERE id = ?').get(id);
+    const emp = await db.prepare('SELECT * FROM employees WHERE id = ?').get(id);
     let newCredit = emp.current_credit_balance;
     if (payment_type === 'Salary') {
       newCredit = Math.max(0, newCredit - payAmt);
@@ -542,11 +542,11 @@ app.post('/api/employees/:id/pay', (req, res) => {
       newCredit = newCredit - payAmt; // Employee owes back or has taken advance
     }
 
-    db.prepare('UPDATE employees SET current_credit_balance = ? WHERE id = ?').run(newCredit, id);
-    recalculateEmployee(id);
+    await db.prepare('UPDATE employees SET current_credit_balance = ? WHERE id = ?').run(newCredit, id);
+    await recalculateEmployee(id);
 
     // Accounts ledger
-    db.prepare(`
+    await db.prepare(`
       INSERT INTO accounts_ledger (date, type, category, reference_type, reference_id, amount, payment_mode, description)
       VALUES (?, 'Expense', 'Salary', 'EmployeePayment', ?, ?, ?, ?)
     `).run(
@@ -557,8 +557,8 @@ app.post('/api/employees/:id/pay', (req, res) => {
       `Salary/payment to ${emp.name} (${emp.employee_type})`
     );
 
-    const updatedEmp = db.prepare('SELECT * FROM employees WHERE id = ?').get(id);
-    const payments = db.prepare('SELECT * FROM employee_payments WHERE employee_id = ? ORDER BY date DESC').all(id);
+    const updatedEmp = await db.prepare('SELECT * FROM employees WHERE id = ?').get(id);
+    const payments = await db.prepare('SELECT * FROM employee_payments WHERE employee_id = ? ORDER BY date DESC').all(id);
 
     res.json({ success: true, employee: updatedEmp, payments });
   } catch (err) {
@@ -567,7 +567,7 @@ app.post('/api/employees/:id/pay', (req, res) => {
 });
 
 // Add Credit Due to Employee (reminds owner to pay later)
-app.post('/api/employees/:id/credit', (req, res) => {
+app.post('/api/employees/:id/credit', async (req, res) => {
   try {
     const { id } = req.params;
     const { amount, date, month_year, notes } = req.body;
@@ -579,7 +579,7 @@ app.post('/api/employees/:id/credit', (req, res) => {
     const creditDate = date || new Date().toISOString().split('T')[0];
 
     // 1. Record in employee_payments as 'Credit Due'
-    db.prepare(`
+    await db.prepare(`
       INSERT INTO employee_payments (employee_id, date, payment_type, amount, month_year, payment_mode, notes)
       VALUES (?, ?, 'Credit Due', ?, ?, 'Credit', ?)
     `).run(
@@ -591,14 +591,14 @@ app.post('/api/employees/:id/credit', (req, res) => {
     );
 
     // 2. Increase current_credit_balance
-    db.prepare(`
+    await db.prepare(`
       UPDATE employees 
       SET current_credit_balance = current_credit_balance + ? 
       WHERE id = ?
     `).run(creditAmt, id);
 
-    const updatedEmp = db.prepare('SELECT * FROM employees WHERE id = ?').get(id);
-    const payments = db.prepare('SELECT * FROM employee_payments WHERE employee_id = ? ORDER BY date DESC, id DESC').all(id);
+    const updatedEmp = await db.prepare('SELECT * FROM employees WHERE id = ?').get(id);
+    const payments = await db.prepare('SELECT * FROM employee_payments WHERE employee_id = ? ORDER BY date DESC, id DESC').all(id);
 
     res.json({ success: true, employee: updatedEmp, payments, message: `Added ₹${creditAmt.toLocaleString('en-IN')} to credit due balance` });
   } catch (err) {
@@ -606,10 +606,10 @@ app.post('/api/employees/:id/credit', (req, res) => {
   }
 });
 
-app.get('/api/employees/:id/payments', (req, res) => {
+app.get('/api/employees/:id/payments', async (req, res) => {
   try {
     const { id } = req.params;
-    const payments = db.prepare('SELECT * FROM employee_payments WHERE employee_id = ? ORDER BY date DESC, id DESC').all(id);
+    const payments = await db.prepare('SELECT * FROM employee_payments WHERE employee_id = ? ORDER BY date DESC, id DESC').all(id);
     res.json(payments);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -619,9 +619,9 @@ app.get('/api/employees/:id/payments', (req, res) => {
 // -----------------------------------------------------------------------------
 // 5. SUPPLIERS API
 // -----------------------------------------------------------------------------
-app.get('/api/suppliers', (req, res) => {
+app.get('/api/suppliers', async (req, res) => {
   try {
-    const suppliers = db.prepare(`
+    const suppliers = await db.prepare(`
       SELECT 
         s.*,
         (SELECT COUNT(*) FROM supplier_purchases WHERE supplier_id = s.id) as total_purchase_orders,
@@ -635,12 +635,12 @@ app.get('/api/suppliers', (req, res) => {
   }
 });
 
-app.post('/api/suppliers', (req, res) => {
+app.post('/api/suppliers', async (req, res) => {
   try {
     const { name, company_name, phone, address, gstin, materials_supplied } = req.body;
     if (!name) return res.status(400).json({ error: 'Supplier name is required' });
 
-    const info = db.prepare(`
+    const info = await db.prepare(`
       INSERT INTO suppliers (name, company_name, phone, address, gstin, materials_supplied)
       VALUES (?, ?, ?, ?, ?, ?)
     `).run(
@@ -652,21 +652,21 @@ app.post('/api/suppliers', (req, res) => {
       materials_supplied || 'Steel & Raw Materials'
     );
 
-    const supplier = db.prepare('SELECT * FROM suppliers WHERE id = ?').get(info.lastInsertRowid);
+    const supplier = await db.prepare('SELECT * FROM suppliers WHERE id = ?').get(info.lastInsertRowid);
     res.status(201).json(supplier);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-app.get('/api/suppliers/:id', (req, res) => {
+app.get('/api/suppliers/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const supplier = db.prepare('SELECT * FROM suppliers WHERE id = ?').get(id);
+    const supplier = await db.prepare('SELECT * FROM suppliers WHERE id = ?').get(id);
     if (!supplier) return res.status(404).json({ error: 'Supplier not found' });
 
-    const purchases = db.prepare('SELECT * FROM supplier_purchases WHERE supplier_id = ? ORDER BY purchase_date DESC').all(id);
-    const payments = db.prepare('SELECT * FROM supplier_payments WHERE supplier_id = ? ORDER BY date DESC').all(id);
+    const purchases = await db.prepare('SELECT * FROM supplier_purchases WHERE supplier_id = ? ORDER BY purchase_date DESC').all(id);
+    const payments = await db.prepare('SELECT * FROM supplier_payments WHERE supplier_id = ? ORDER BY date DESC').all(id);
 
     res.json({ supplier, purchases, payments });
   } catch (err) {
@@ -675,7 +675,7 @@ app.get('/api/suppliers/:id', (req, res) => {
 });
 
 // Record new Purchase from Supplier (Raw Material Bought / Stock In)
-app.post('/api/suppliers/:id/purchases', (req, res) => {
+app.post('/api/suppliers/:id/purchases', async (req, res) => {
   try {
     const { id } = req.params;
     const {
@@ -715,7 +715,7 @@ app.post('/api/suppliers/:id/purchases', (req, res) => {
     const pDate = purchase_date || new Date().toISOString().split('T')[0];
     const combinedNotes = [notes, vehicle_number ? `Vehicle: ${vehicle_number}` : ''].filter(Boolean).join(' • ');
 
-    const info = db.prepare(`
+    const info = await db.prepare(`
       INSERT INTO supplier_purchases (
         supplier_id, purchase_date, invoice_no, product_id, product_name, quantity, unit,
         bought_price_per_unit, subtotal, gst_rate, cgst_amount, sgst_amount,
@@ -748,10 +748,10 @@ app.post('/api/suppliers/:id/purchases', (req, res) => {
     // 1. Update Product Inventory Stock & Latest Bought Cost (Averaged if price changed)
     let matchedProduct = null;
     if (product_id) {
-      matchedProduct = db.prepare('SELECT * FROM products WHERE id = ?').get(product_id);
+      matchedProduct = await db.prepare('SELECT * FROM products WHERE id = ?').get(product_id);
     }
     if (!matchedProduct && product_name) {
-      matchedProduct = db.prepare('SELECT * FROM products WHERE LOWER(TRIM(name)) = LOWER(TRIM(?))').get(product_name.trim());
+      matchedProduct = await db.prepare('SELECT * FROM products WHERE LOWER(TRIM(name)) = LOWER(TRIM(?))').get(product_name.trim());
     }
 
     if (matchedProduct) {
@@ -768,7 +768,7 @@ app.post('/api/suppliers/:id/purchases', (req, res) => {
         }
       }
 
-      db.prepare(`
+      await db.prepare(`
         UPDATE products 
         SET stock_qty = stock_qty + ?,
             default_bought_rate = ?
@@ -776,18 +776,18 @@ app.post('/api/suppliers/:id/purchases', (req, res) => {
       `).run(qty, calculatedBoughtRate, matchedProduct.id);
     } else if (product_name && product_name.trim()) {
       try {
-        const infoProd = db.prepare(`
+        const infoProd = await db.prepare(`
           INSERT INTO products (name, category, hsn_code, unit, default_sell_rate, default_bought_rate, gst_rate, stock_qty)
           VALUES (?, 'Steel', '7214', ?, 0, ?, ?, ?)
         `).run(product_name.trim(), unit || 'Tons', rate, gRate || 18, qty);
-        matchedProduct = db.prepare('SELECT * FROM products WHERE id = ?').get(infoProd.lastInsertRowid);
+        matchedProduct = await db.prepare('SELECT * FROM products WHERE id = ?').get(infoProd.lastInsertRowid);
       } catch (e) {
         // ignore duplicate
       }
     }
 
     // 2. Ledger entry for bought price / expense
-    db.prepare(`
+    await db.prepare(`
       INSERT INTO accounts_ledger (date, type, category, reference_type, reference_id, amount, payment_mode, description)
       VALUES (?, 'Expense', 'Raw Material Purchase', 'SupplierPurchase', ?, ?, ?, ?)
     `).run(
@@ -798,9 +798,9 @@ app.post('/api/suppliers/:id/purchases', (req, res) => {
       `Material purchase from supplier #${id} (${product_name || 'Goods'}) - Total: ₹${totalAmount}, Paid: ₹${paid}, Credit: ₹${balance}`
     );
 
-    recalculateSupplier(id);
-    const updatedSup = db.prepare('SELECT * FROM suppliers WHERE id = ?').get(id);
-    const updatedProduct = matchedProduct ? db.prepare('SELECT * FROM products WHERE id = ?').get(matchedProduct.id) : null;
+    await recalculateSupplier(id);
+    const updatedSup = await db.prepare('SELECT * FROM suppliers WHERE id = ?').get(id);
+    const updatedProduct = matchedProduct ? await db.prepare('SELECT * FROM products WHERE id = ?').get(matchedProduct.id) : null;
 
     res.status(201).json({
       success: true,
@@ -814,24 +814,24 @@ app.post('/api/suppliers/:id/purchases', (req, res) => {
 });
 
 // Delete Supplier Purchase (Cancel Inward Stock & reverse credit)
-app.delete('/api/suppliers/purchases/:purchaseId', (req, res) => {
+app.delete('/api/suppliers/purchases/:purchaseId', async (req, res) => {
   try {
     const { purchaseId } = req.params;
-    const purchase = db.prepare('SELECT * FROM supplier_purchases WHERE id = ?').get(purchaseId);
+    const purchase = await db.prepare('SELECT * FROM supplier_purchases WHERE id = ?').get(purchaseId);
     if (!purchase) return res.status(404).json({ error: 'Purchase record not found' });
 
     // Revert inventory addition
     if (purchase.product_id) {
-      db.prepare('UPDATE products SET stock_qty = MAX(0, stock_qty - ?) WHERE id = ?').run(purchase.quantity, purchase.product_id);
+      await db.prepare('UPDATE products SET stock_qty = MAX(0, stock_qty - ?) WHERE id = ?').run(purchase.quantity, purchase.product_id);
     } else if (purchase.product_name) {
-      db.prepare('UPDATE products SET stock_qty = MAX(0, stock_qty - ?) WHERE LOWER(TRIM(name)) = LOWER(TRIM(?))').run(purchase.quantity, purchase.product_name.trim());
+      await db.prepare('UPDATE products SET stock_qty = MAX(0, stock_qty - ?) WHERE LOWER(TRIM(name)) = LOWER(TRIM(?))').run(purchase.quantity, purchase.product_name.trim());
     }
 
-    db.prepare('DELETE FROM supplier_purchases WHERE id = ?').run(purchaseId);
-    db.prepare('DELETE FROM accounts_ledger WHERE reference_type = "SupplierPurchase" AND reference_id = ?').run(purchaseId);
+    await db.prepare('DELETE FROM supplier_purchases WHERE id = ?').run(purchaseId);
+    await db.prepare("DELETE FROM accounts_ledger WHERE reference_type = 'SupplierPurchase' AND reference_id = ?").run(purchaseId);
 
-    recalculateSupplier(purchase.supplier_id);
-    const updatedSup = db.prepare('SELECT * FROM suppliers WHERE id = ?').get(purchase.supplier_id);
+    await recalculateSupplier(purchase.supplier_id);
+    const updatedSup = await db.prepare('SELECT * FROM suppliers WHERE id = ?').get(purchase.supplier_id);
 
     res.json({ success: true, supplier: updatedSup });
   } catch (err) {
@@ -840,7 +840,7 @@ app.delete('/api/suppliers/purchases/:purchaseId', (req, res) => {
 });
 
 // Pay Supplier (reducing supplier credit)
-app.post('/api/suppliers/:id/pay', (req, res) => {
+app.post('/api/suppliers/:id/pay', async (req, res) => {
   try {
     const { id } = req.params;
     const { amount, date, payment_mode, reference_no, notes } = req.body;
@@ -849,31 +849,31 @@ app.post('/api/suppliers/:id/pay', (req, res) => {
 
     const payDate = date || new Date().toISOString().split('T')[0];
 
-    const info = db.prepare(`
+    const info = await db.prepare(`
       INSERT INTO supplier_payments (supplier_id, date, amount, payment_mode, reference_no, notes)
       VALUES (?, ?, ?, ?, ?, ?)
     `).run(id, payDate, payAmt, payment_mode || 'Bank Transfer', reference_no || '', notes || '');
 
     // Ledger entry
-    db.prepare(`
+    await db.prepare(`
       INSERT INTO accounts_ledger (date, type, category, reference_type, reference_id, amount, payment_mode, description)
       VALUES (?, 'Expense', 'Supplier Payment', 'SupplierPayment', ?, ?, ?, ?)
     `).run(payDate, info.lastInsertRowid, payAmt, payment_mode || 'Bank Transfer', `Payment to supplier ID ${id}`);
 
-    recalculateSupplier(id);
-    const updatedSup = db.prepare('SELECT * FROM suppliers WHERE id = ?').get(id);
+    await recalculateSupplier(id);
+    const updatedSup = await db.prepare('SELECT * FROM suppliers WHERE id = ?').get(id);
     res.json({ success: true, supplier: updatedSup });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-app.delete('/api/suppliers/:id', (req, res) => {
+app.delete('/api/suppliers/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    db.prepare('DELETE FROM supplier_payments WHERE supplier_id = ?').run(id);
-    db.prepare('DELETE FROM supplier_purchases WHERE supplier_id = ?').run(id);
-    db.prepare('DELETE FROM suppliers WHERE id = ?').run(id);
+    await db.prepare('DELETE FROM supplier_payments WHERE supplier_id = ?').run(id);
+    await db.prepare('DELETE FROM supplier_purchases WHERE supplier_id = ?').run(id);
+    await db.prepare('DELETE FROM suppliers WHERE id = ?').run(id);
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -883,16 +883,16 @@ app.delete('/api/suppliers/:id', (req, res) => {
 // -----------------------------------------------------------------------------
 // 6. BILLS / INVOICES API (JS001, JS002, ...)
 // -----------------------------------------------------------------------------
-app.get('/api/bills/next-number', (req, res) => {
+app.get('/api/bills/next-number', async (req, res) => {
   try {
-    const next = getNextBillNumber();
+    const next = await getNextBillNumber();
     res.json(next);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-app.get('/api/bills', (req, res) => {
+app.get('/api/bills', async (req, res) => {
   try {
     const { search, status, from_date, to_date, exact_date, vehicle } = req.query;
     let query = `
@@ -951,21 +951,21 @@ app.get('/api/bills', (req, res) => {
     }
 
     query += ' ORDER BY b.bill_sequence DESC, b.id DESC';
-    const bills = db.prepare(query).all(...params);
+    const bills = await db.prepare(query).all(...params);
     res.json(bills);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-app.get('/api/bills/:id', (req, res) => {
+app.get('/api/bills/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const bill = db.prepare('SELECT * FROM bills WHERE id = ? OR bill_no = ?').get(id, id);
+    const bill = await db.prepare('SELECT * FROM bills WHERE id = ? OR bill_no = ?').get(id, id);
     if (!bill) return res.status(404).json({ error: 'Bill not found' });
 
-    const customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(bill.customer_id);
-    const vehicle = bill.vehicle_id ? db.prepare('SELECT * FROM vehicles WHERE id = ?').get(bill.vehicle_id) : null;
+    const customer = await db.prepare('SELECT * FROM customers WHERE id = ?').get(bill.customer_id);
+    const vehicle = bill.vehicle_id ? await db.prepare('SELECT * FROM vehicles WHERE id = ?').get(bill.vehicle_id) : null;
 
     res.json({ bill, customer, vehicle });
   } catch (err) {
@@ -974,7 +974,7 @@ app.get('/api/bills/:id', (req, res) => {
 });
 
 // Create New Bill (Billing Page)
-app.post('/api/bills', (req, res) => {
+app.post('/api/bills', async (req, res) => {
   try {
     const {
       customer_name,
@@ -1008,17 +1008,17 @@ app.post('/api/bills', (req, res) => {
     }
 
     // 1. AUTO-SAVE / GET CUSTOMER
-    let customer = db.prepare('SELECT * FROM customers WHERE LOWER(TRIM(name)) = LOWER(TRIM(?))').get(customer_name.trim());
+    let customer = await db.prepare('SELECT * FROM customers WHERE LOWER(TRIM(name)) = LOWER(TRIM(?))').get(customer_name.trim());
     if (!customer) {
-      const custInfo = db.prepare(`
+      const custInfo = await db.prepare(`
         INSERT INTO customers (name, phone, address, gstin)
         VALUES (?, ?, ?, ?)
       `).run(customer_name.trim(), customer_phone || '', customer_address || '', customer_gstin || '');
-      customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(custInfo.lastInsertRowid);
+      customer = await db.prepare('SELECT * FROM customers WHERE id = ?').get(custInfo.lastInsertRowid);
     } else {
       // Update phone or address if provided and was empty
       if ((customer_phone && !customer.phone) || (customer_address && !customer.address)) {
-        db.prepare('UPDATE customers SET phone = COALESCE(NULLIF(?, ""), phone), address = COALESCE(NULLIF(?, ""), address) WHERE id = ?')
+        await db.prepare('UPDATE customers SET phone = COALESCE(NULLIF(?, ""), phone), address = COALESCE(NULLIF(?, ""), address) WHERE id = ?')
           .run(customer_phone || '', customer_address || '', customer.id);
       }
     }
@@ -1029,20 +1029,20 @@ app.post('/api/bills', (req, res) => {
     let resolvedDriver = driver_name ? driver_name.trim() : null;
 
     if (resolvedVehicleId) {
-      const v = db.prepare('SELECT vehicle_number, driver_name FROM vehicles WHERE id = ?').get(resolvedVehicleId);
+      const v = await db.prepare('SELECT vehicle_number, driver_name FROM vehicles WHERE id = ?').get(resolvedVehicleId);
       if (v) {
         if (!resolvedVehicleNumber) resolvedVehicleNumber = v.vehicle_number;
         if (!resolvedDriver && v.driver_name) resolvedDriver = v.driver_name;
       }
     }
     if (!resolvedDriver && resolvedVehicleNumber) {
-      const v = db.prepare('SELECT driver_name FROM vehicles WHERE UPPER(REPLACE(TRIM(vehicle_number), " ", "")) = UPPER(REPLACE(TRIM(?), " ", ""))').get(resolvedVehicleNumber);
+      const v = await db.prepare('SELECT driver_name FROM vehicles WHERE UPPER(REPLACE(TRIM(vehicle_number), " ", "")) = UPPER(REPLACE(TRIM(?), " ", ""))').get(resolvedVehicleNumber);
       if (v && v.driver_name) resolvedDriver = v.driver_name;
     }
 
     let resolvedSupplier = supplier_name ? supplier_name.trim() : null;
     if (!resolvedSupplier && product_name) {
-      const sp = db.prepare('SELECT s.name FROM supplier_purchases sp JOIN suppliers s ON sp.supplier_id = s.id WHERE LOWER(TRIM(sp.product_name)) = LOWER(TRIM(?)) ORDER BY sp.id DESC LIMIT 1').get(product_name.trim());
+      const sp = await db.prepare('SELECT s.name FROM supplier_purchases sp JOIN suppliers s ON sp.supplier_id = s.id WHERE LOWER(TRIM(sp.product_name)) = LOWER(TRIM(?)) ORDER BY sp.id DESC LIMIT 1').get(product_name.trim());
       if (sp) resolvedSupplier = sp.name;
     }
     if (!resolvedSupplier) resolvedSupplier = 'Direct / Steel Mill';
@@ -1075,13 +1075,13 @@ app.post('/api/bills', (req, res) => {
     }
 
     // 4. GENERATE SEQUENTIAL BILL NUMBER (JS001, JS002, ...)
-    const { bill_no, sequence } = getNextBillNumber();
+    const { bill_no, sequence } = await getNextBillNumber();
     const billDate = date || new Date().toISOString().split('T')[0];
     const now = new Date();
     const billTime = time || now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
 
     // 5. INSERT BILL RECORD
-    const insertBill = db.prepare(`
+    const insertBill = await db.prepare(`
       INSERT INTO bills (
         bill_no, bill_sequence, date, time, customer_id, customer_name,
         vehicle_id, vehicle_number, driver_name, supplier_name, product_id, product_name,
@@ -1099,7 +1099,7 @@ app.post('/api/bills', (req, res) => {
       )
     `);
 
-    const info = insertBill.run(
+    const info = await insertBill.run(
       bill_no,
       sequence,
       billDate,
@@ -1137,29 +1137,29 @@ app.post('/api/bills', (req, res) => {
 
     // 6. RECORD IN CUSTOMER PAYMENTS IF AMOUNT WAS RECEIVED
     if (received > 0) {
-      db.prepare(`
+      await db.prepare(`
         INSERT INTO customer_payments (customer_id, bill_id, date, amount, payment_mode, reference_no, notes)
         VALUES (?, ?, ?, ?, ?, ?, ?)
       `).run(customer.id, billId, billDate, received, payment_mode || 'Cash', bill_no, `Payment for invoice ${bill_no}`);
     }
 
     // 7. RECORD IN ACCOUNTS LEDGER (Sales income)
-    db.prepare(`
+    await db.prepare(`
       INSERT INTO accounts_ledger (date, type, category, reference_type, reference_id, amount, payment_mode, description)
       VALUES (?, 'Income', 'Sales', 'Bill', ?, ?, ?, ?)
     `).run(billDate, billId, totalAmount, finalPaymentMode, `Sale Bill #${bill_no} to ${customer.name}`);
 
     // 8. DEDUCT INVENTORY / STOCK OUT
     if (product_id) {
-      db.prepare('UPDATE products SET stock_qty = MAX(0, stock_qty - ?) WHERE id = ?').run(qty, product_id);
+      await db.prepare('UPDATE products SET stock_qty = MAX(0, stock_qty - ?) WHERE id = ?').run(qty, product_id);
     } else if (product_name) {
-      db.prepare('UPDATE products SET stock_qty = MAX(0, stock_qty - ?) WHERE LOWER(TRIM(name)) = LOWER(TRIM(?))').run(qty, product_name.trim());
+      await db.prepare('UPDATE products SET stock_qty = MAX(0, stock_qty - ?) WHERE LOWER(TRIM(name)) = LOWER(TRIM(?))').run(qty, product_name.trim());
     }
 
     // 9. RECALCULATE CUSTOMER LIFETIME STATS AUTOMATICALLY
-    recalculateCustomer(customer.id);
+    await recalculateCustomer(customer.id);
 
-    const createdBill = db.prepare(`
+    const createdBill = await db.prepare(`
       SELECT b.*,
              COALESCE(NULLIF(b.driver_name, ''), v.driver_name, '') as driver_name,
              COALESCE(NULLIF(b.supplier_name, ''), (
@@ -1173,7 +1173,7 @@ app.post('/api/bills', (req, res) => {
       LEFT JOIN vehicles v ON b.vehicle_id = v.id OR (b.vehicle_number IS NOT NULL AND b.vehicle_number != '' AND UPPER(REPLACE(TRIM(v.vehicle_number), ' ', '')) = UPPER(REPLACE(TRIM(b.vehicle_number), ' ', '')))
       WHERE b.id = ?
     `).get(billId);
-    const updatedCustomer = db.prepare('SELECT * FROM customers WHERE id = ?').get(customer.id);
+    const updatedCustomer = await db.prepare('SELECT * FROM customers WHERE id = ?').get(customer.id);
 
     res.status(201).json({
       success: true,
@@ -1186,24 +1186,24 @@ app.post('/api/bills', (req, res) => {
 });
 
 // Delete / Cancel Bill
-app.delete('/api/bills/:id', (req, res) => {
+app.delete('/api/bills/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const bill = db.prepare('SELECT * FROM bills WHERE id = ?').get(id);
+    const bill = await db.prepare('SELECT * FROM bills WHERE id = ?').get(id);
     if (!bill) return res.status(404).json({ error: 'Bill not found' });
 
     // Restore stock to products
     if (bill.product_id) {
-      db.prepare('UPDATE products SET stock_qty = stock_qty + ? WHERE id = ?').run(bill.quantity, bill.product_id);
+      await db.prepare('UPDATE products SET stock_qty = stock_qty + ? WHERE id = ?').run(bill.quantity, bill.product_id);
     } else if (bill.product_name) {
-      db.prepare('UPDATE products SET stock_qty = stock_qty + ? WHERE LOWER(TRIM(name)) = LOWER(TRIM(?))').run(bill.quantity, bill.product_name.trim());
+      await db.prepare('UPDATE products SET stock_qty = stock_qty + ? WHERE LOWER(TRIM(name)) = LOWER(TRIM(?))').run(bill.quantity, bill.product_name.trim());
     }
 
-    db.prepare('DELETE FROM bills WHERE id = ?').run(id);
-    db.prepare('DELETE FROM customer_payments WHERE bill_id = ?').run(id);
-    db.prepare('DELETE FROM accounts_ledger WHERE reference_type = "Bill" AND reference_id = ?').run(id);
+    await db.prepare('DELETE FROM bills WHERE id = ?').run(id);
+    await db.prepare('DELETE FROM customer_payments WHERE bill_id = ?').run(id);
+    await db.prepare("DELETE FROM accounts_ledger WHERE reference_type = 'Bill' AND reference_id = ?").run(id);
 
-    recalculateCustomer(bill.customer_id);
+    await recalculateCustomer(bill.customer_id);
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -1213,7 +1213,7 @@ app.delete('/api/bills/:id', (req, res) => {
 // -----------------------------------------------------------------------------
 // 7. ACCOUNTS & FINANCIALS API
 // -----------------------------------------------------------------------------
-app.get('/api/accounts', (req, res) => {
+app.get('/api/accounts', async (req, res) => {
   try {
     let { from_date, to_date, date, range, product } = req.query;
 
@@ -1301,7 +1301,7 @@ app.get('/api/accounts', (req, res) => {
     }
 
     // 1. Total Sales (Revenue summation of Total Bill Amount)
-    const salesRow = db.prepare(`
+    const salesRow = await db.prepare(`
       SELECT 
         COALESCE(SUM(total_amount), 0) as totalRevenue,
         COALESCE(SUM(subtotal), 0) as totalSubtotal,
@@ -1322,11 +1322,11 @@ app.get('/api/accounts', (req, res) => {
       stockBoughtQuery += ' WHERE LOWER(TRIM(name)) = LOWER(TRIM(?))';
       stockBoughtParams.push(product.trim());
     }
-    const stockBoughtRow = db.prepare(stockBoughtQuery).get(...stockBoughtParams);
+    const stockBoughtRow = await db.prepare(stockBoughtQuery).get(...stockBoughtParams);
     const totalStockBought = stockBoughtRow.totalStockBought;
 
     // Supplier purchases
-    const purchasesRow = db.prepare(`
+    const purchasesRow = await db.prepare(`
       SELECT 
         COALESCE(SUM(total_amount), 0) as totalBoughtPrice,
         COALESCE(SUM(subtotal), 0) as totalPurchasesSubtotal,
@@ -1340,29 +1340,29 @@ app.get('/api/accounts', (req, res) => {
     `).get(...purchaseParams);
 
     // 3. Vehicle Expenses Breakdown
-    const vehDiesel = db.prepare(`
+    const vehDiesel = (await db.prepare(`
       SELECT COALESCE(SUM(amount), 0) as total FROM vehicle_expenses WHERE expense_type = 'Diesel' AND ${expenseFilter}
-    `).get(...generalDateParams).total;
+    `).get(...generalDateParams))?.total || 0;
 
-    const vehService = db.prepare(`
+    const vehService = (await db.prepare(`
       SELECT COALESCE(SUM(amount), 0) as total FROM vehicle_expenses WHERE expense_type = 'Service' AND ${expenseFilter}
-    `).get(...generalDateParams).total;
+    `).get(...generalDateParams))?.total || 0;
 
-    const vehOther = db.prepare(`
+    const vehOther = (await db.prepare(`
       SELECT COALESCE(SUM(amount), 0) as total FROM vehicle_expenses WHERE expense_type = 'Other' AND ${expenseFilter}
-    `).get(...generalDateParams).total;
+    `).get(...generalDateParams))?.total || 0;
 
     // 4. Employee Salaries & Wages
-    const employeeSalaries = db.prepare(`
+    const employeeSalaries = (await db.prepare(`
       SELECT COALESCE(SUM(amount), 0) as total FROM employee_payments WHERE ${salaryFilter}
-    `).get(...generalDateParams).total;
+    `).get(...generalDateParams))?.total || 0;
 
     // 5. Total Customer Credit Pending across all customers
-    const allPendingCredit = db.prepare('SELECT COALESCE(SUM(pending_credit), 0) as total FROM customers').get().total;
+    const allPendingCredit = (await db.prepare('SELECT COALESCE(SUM(pending_credit), 0) as total FROM customers').get())?.total || 0;
     // 6. Total Supplier Credit Pending across all suppliers
-    const allPendingSupplierCredit = db.prepare('SELECT COALESCE(SUM(pending_credit), 0) as total FROM suppliers').get().total;
+    const allPendingSupplierCredit = (await db.prepare('SELECT COALESCE(SUM(pending_credit), 0) as total FROM suppliers').get())?.total || 0;
     // 7. Total Employee Credit Balance pending
-    const allEmployeeCredit = db.prepare('SELECT COALESCE(SUM(current_credit_balance), 0) as total FROM employees').get().total;
+    const allEmployeeCredit = (await db.prepare('SELECT COALESCE(SUM(current_credit_balance), 0) as total FROM employees').get())?.total || 0;
 
     // Financial calculations
     // User Specification:
@@ -1400,7 +1400,7 @@ app.get('/api/accounts', (req, res) => {
     const netProfitMargin = totalRevenue > 0 ? ((netProfit / totalRevenue) * 100).toFixed(1) : 0;
 
     // Recent Ledger Entries
-    const recentLedger = db.prepare(`
+    const recentLedger = await db.prepare(`
       SELECT * FROM accounts_ledger 
       WHERE ${ledgerFilter} 
       ORDER BY date DESC, id DESC 
@@ -1408,7 +1408,7 @@ app.get('/api/accounts', (req, res) => {
     `).all(...(from_date && to_date ? [from_date, to_date] : []));
 
     // 1. Highest Selling Products
-    const topProducts = db.prepare(`
+    const topProducts = await db.prepare(`
       SELECT 
         COALESCE(product_name, 'TMT Steel') as name,
         COALESCE(SUM(quantity), 0) as quantity,
@@ -1429,7 +1429,7 @@ app.get('/api/accounts', (req, res) => {
     if (range === '1w' || range === '30d') {
       timelineType = 'daily';
       const numDays = range === '1w' ? 7 : 30;
-      const salesByDay = db.prepare(`
+      const salesByDay = await db.prepare(`
         SELECT 
           date,
           COALESCE(SUM(total_amount), 0) as revenue,
@@ -1443,13 +1443,13 @@ app.get('/api/accounts', (req, res) => {
       `).all(from_date, to_date);
       const salesMap = Object.fromEntries(salesByDay.map(s => [s.date, s]));
 
-      const vehByDay = Object.fromEntries(db.prepare(`
+      const vehByDay = Object.fromEntries((await db.prepare(`
         SELECT date, COALESCE(SUM(amount), 0) as total FROM vehicle_expenses WHERE date BETWEEN ? AND ? GROUP BY date
-      `).all(from_date, to_date).map(v => [v.date, v.total]));
+      `).all(from_date, to_date)).map(v => [v.date, v.total]));
 
-      const salByDay = Object.fromEntries(db.prepare(`
+      const salByDay = Object.fromEntries((await db.prepare(`
         SELECT date, COALESCE(SUM(amount), 0) as total FROM employee_payments WHERE date BETWEEN ? AND ? GROUP BY date
-      `).all(from_date, to_date).map(s => [s.date, s.total]));
+      `).all(from_date, to_date)).map(s => [s.date, s.total]));
 
       const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
       const mNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -1478,7 +1478,7 @@ app.get('/api/accounts', (req, res) => {
     } else if (range === '5y') {
       timelineType = 'yearly';
       const currentYear = new Date().getFullYear();
-      const salesByYear = db.prepare(`
+      const salesByYear = await db.prepare(`
         SELECT 
           strftime('%Y', date) as year,
           COALESCE(SUM(total_amount), 0) as revenue,
@@ -1491,13 +1491,13 @@ app.get('/api/accounts', (req, res) => {
       `).all();
       const salesMap = Object.fromEntries(salesByYear.map(s => [s.year, s]));
 
-      const vehByYear = Object.fromEntries(db.prepare(`
+      const vehByYear = Object.fromEntries((await db.prepare(`
         SELECT strftime('%Y', date) as year, COALESCE(SUM(amount), 0) as total FROM vehicle_expenses GROUP BY strftime('%Y', date)
-      `).all().map(v => [v.year, v.total]));
+      `).all()).map(v => [v.year, v.total]));
 
-      const salByYear = Object.fromEntries(db.prepare(`
+      const salByYear = Object.fromEntries((await db.prepare(`
         SELECT strftime('%Y', date) as year, COALESCE(SUM(amount), 0) as total FROM employee_payments GROUP BY strftime('%Y', date)
-      `).all().map(s => [s.year, s.total]));
+      `).all()).map(s => [s.year, s.total]));
 
       for (let y = currentYear - 4; y <= currentYear; y++) {
         const yStr = String(y);
@@ -1522,7 +1522,7 @@ app.get('/api/accounts', (req, res) => {
       else if (range === '1y') numMonths = 12;
       else if (range === 'all') numMonths = 6;
 
-      const salesByMonth = db.prepare(`
+      const salesByMonth = await db.prepare(`
         SELECT 
           strftime('%Y-%m', date) as month,
           COALESCE(SUM(total_amount), 0) as revenue,
@@ -1535,13 +1535,13 @@ app.get('/api/accounts', (req, res) => {
       `).all();
       const salesMap = Object.fromEntries(salesByMonth.map(s => [s.month, s]));
 
-      const vehByMonth = Object.fromEntries(db.prepare(`
+      const vehByMonth = Object.fromEntries((await db.prepare(`
         SELECT strftime('%Y-%m', date) as month, COALESCE(SUM(amount), 0) as total FROM vehicle_expenses GROUP BY strftime('%Y-%m', date)
-      `).all().map(v => [v.month, v.total]));
+      `).all()).map(v => [v.month, v.total]));
 
-      const salByMonth = Object.fromEntries(db.prepare(`
+      const salByMonth = Object.fromEntries((await db.prepare(`
         SELECT strftime('%Y-%m', date) as month, COALESCE(SUM(amount), 0) as total FROM employee_payments GROUP BY strftime('%Y-%m', date)
-      `).all().map(s => [s.month, s.total]));
+      `).all()).map(s => [s.month, s.total]));
 
       const now = new Date();
       const mNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -1571,32 +1571,32 @@ app.get('/api/accounts', (req, res) => {
     };
 
     // 3. Collections Breakdown (Cash, UPI, Bank Transfer, Total Credit)
-    const cashFromBills = db.prepare(`
+    const cashFromBills = (await db.prepare(`
       SELECT COALESCE(SUM(amount_received), 0) as total FROM bills WHERE payment_mode = 'Cash' AND ${billFilter}
-    `).get(...billParams).total;
+    `).get(...billParams))?.total || 0;
 
-    const upiFromBills = db.prepare(`
+    const upiFromBills = (await db.prepare(`
       SELECT COALESCE(SUM(amount_received), 0) as total FROM bills WHERE payment_mode = 'UPI' AND ${billFilter}
-    `).get(...billParams).total;
+    `).get(...billParams))?.total || 0;
 
-    const bankFromBills = db.prepare(`
+    const bankFromBills = (await db.prepare(`
       SELECT COALESCE(SUM(amount_received), 0) as total FROM bills WHERE payment_mode IN ('Bank Transfer', 'NEFT', 'Cheque') AND ${billFilter}
-    `).get(...billParams).total;
+    `).get(...billParams))?.total || 0;
 
     let custPayFilter = '1=1';
     if (from_date && to_date) custPayFilter = 'date BETWEEN ? AND ?';
 
-    const cashFromCust = db.prepare(`
+    const cashFromCust = (await db.prepare(`
       SELECT COALESCE(SUM(amount), 0) as total FROM customer_payments WHERE payment_mode = 'Cash' AND ${custPayFilter}
-    `).get(...(from_date && to_date ? [from_date, to_date] : [])).total;
+    `).get(...(from_date && to_date ? [from_date, to_date] : [])))?.total || 0;
 
-    const upiFromCust = db.prepare(`
+    const upiFromCust = (await db.prepare(`
       SELECT COALESCE(SUM(amount), 0) as total FROM customer_payments WHERE payment_mode = 'UPI' AND ${custPayFilter}
-    `).get(...(from_date && to_date ? [from_date, to_date] : [])).total;
+    `).get(...(from_date && to_date ? [from_date, to_date] : [])))?.total || 0;
 
-    const bankFromCust = db.prepare(`
+    const bankFromCust = (await db.prepare(`
       SELECT COALESCE(SUM(amount), 0) as total FROM customer_payments WHERE payment_mode IN ('Bank Transfer', 'NEFT', 'Cheque') AND ${custPayFilter}
-    `).get(...(from_date && to_date ? [from_date, to_date] : [])).total;
+    `).get(...(from_date && to_date ? [from_date, to_date] : [])))?.total || 0;
 
     const totalCash = cashFromBills + cashFromCust;
     const totalUpi = upiFromBills + upiFromCust;
@@ -1604,9 +1604,9 @@ app.get('/api/accounts', (req, res) => {
     const totalCollected = totalCash + totalUpi + totalBank;
 
     // Credit from bills in period, plus overall customer dues
-    const billCreditPeriod = db.prepare(`
+    const billCreditPeriod = (await db.prepare(`
       SELECT COALESCE(SUM(balance_due), 0) as total FROM bills WHERE ${billFilter}
-    `).get(...billParams).total;
+    `).get(...billParams))?.total || 0;
 
     const collections = {
       cash: totalCash,
@@ -1668,10 +1668,10 @@ app.get('/api/accounts', (req, res) => {
 });
 
 // Direct Ledger Entry for Other Expense / Income
-app.post('/api/accounts/ledger', (req, res) => {
+app.post('/api/accounts/ledger', async (req, res) => {
   try {
     const { date, type, category, amount, payment_mode, description } = req.body;
-    const info = db.prepare(`
+    const info = await db.prepare(`
       INSERT INTO accounts_ledger (date, type, category, reference_type, reference_id, amount, payment_mode, description)
       VALUES (?, ?, ?, 'Direct', NULL, ?, ?, ?)
     `).run(
@@ -1700,8 +1700,13 @@ if (fs.existsSync(distPath)) {
   });
 }
 
-app.listen(PORT, '0.0.0.0', () => {
+const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`[Jazlan Server] Billing & Accounts API running on http://127.0.0.1:${PORT}`);
+});
+
+server.on('error', (err) => {
+  console.error(`[Jazlan Server] Failed to listen on port ${PORT}:`, err.message);
+  process.exit(1);
 });
 
 module.exports = app;
