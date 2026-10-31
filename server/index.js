@@ -1062,7 +1062,7 @@ app.post('/api/bills', async (req, res) => {
     const tRate = Number(tds_rate || 0);
     const tdsAmount = (taxableAmount * tRate) / 100;
 
-    const totalAmount = Math.round(taxableAmount + gstTotal - tdsAmount);
+    const totalAmount = Math.round(taxableAmount + gstTotal + tdsAmount);
     const received = Number(amount_received || 0);
     const balanceDue = Math.max(0, totalAmount - received);
     const finalPaymentMode = received === 0 ? 'Credit' : (payment_mode || 'Cash');

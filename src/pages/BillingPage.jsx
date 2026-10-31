@@ -174,7 +174,7 @@ export default function BillingPage({ onBillCreated, nextBillNo }) {
   const tdsRate = tdsEnabled ? 2 : 0;
   const tdsAmount = hasProduct ? Math.round((taxableBase * tdsRate) / 100) : 0;
 
-  const calculatedTotal = hasProduct ? Math.round(taxableBase + totalGstAmount - tdsAmount) : 0;
+  const calculatedTotal = hasProduct ? Math.round(taxableBase + totalGstAmount + tdsAmount) : 0;
   const effectiveTotal = hasProduct
     ? (isManualTotal && manualTotalAmount ? Number(manualTotalAmount) : calculatedTotal)
     : 0;
@@ -591,7 +591,7 @@ export default function BillingPage({ onBillCreated, nextBillNo }) {
                     TDS (2%) <span style={{ fontSize: '10px', color: tdsEnabled ? '#059669' : '#83998c' }}>{tdsEnabled ? 'YES' : 'NO'}</span>
                   </div>
                   <div style={{ fontSize: '10px', color: '#52665a', fontFamily: 'monospace' }}>
-                    {tdsEnabled ? `-₹${tdsAmount.toLocaleString('en-IN')}` : '₹0'}
+                    {tdsEnabled ? `+₹${tdsAmount.toLocaleString('en-IN')}` : '₹0'}
                   </div>
                 </div>
               </div>
@@ -1083,7 +1083,7 @@ export default function BillingPage({ onBillCreated, nextBillNo }) {
                     : Math.round((beforeTax * (Number(b.tds_rate) || 2)) / 100);
                   const cgstVal = Number(b.cgst_amount) || Math.round((beforeTax * 0.09));
                   const sgstVal = Number(b.sgst_amount) || Math.round((beforeTax * 0.09));
-                  const totalAmt = Number(b.total_amount) || (beforeTax + cgstVal + sgstVal - tdsVal);
+                  const totalAmt = Number(b.total_amount) || (beforeTax + cgstVal + sgstVal + tdsVal);
 
                   // Individual invoice profit: total bill amount - (tds + cgst + sgst + bought cost)
                   const invoiceProfit = Math.round(totalAmt - (tdsVal + cgstVal + sgstVal + totalBoughtCost));

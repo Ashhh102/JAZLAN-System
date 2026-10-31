@@ -27,7 +27,7 @@ export default function Topbar({ activePage, setActivePage, nextBillNo }) {
 
       <div className="topbar-actions">
         {activePage !== 'billing' && (
-          <button 
+          <button
             className="btn btn-primary btn-sm"
             onClick={() => setActivePage('billing')}
           >
