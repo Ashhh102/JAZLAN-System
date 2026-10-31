@@ -1,5 +1,58 @@
 import React from 'react';
-import { Printer, X, CheckCircle2, Clock, AlertCircle } from 'lucide-react';
+import { Printer, X, Eye } from 'lucide-react';
+
+// Number to Words Converter for Indian Currency System
+function numberToWords(num) {
+  const a = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
+  const b = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
+
+  const n = Math.floor(Math.abs(Number(num) || 0));
+  if (n === 0) return 'Zero';
+
+  function convertTwoDigits(val) {
+    if (val < 20) return a[val];
+    const tens = b[Math.floor(val / 10)];
+    const units = a[val % 10];
+    return tens + (units ? '-' + units : '');
+  }
+
+  function convertThreeDigits(val) {
+    let str = '';
+    const hundreds = Math.floor(val / 100);
+    const rem = val % 100;
+    if (hundreds > 0) {
+      str += a[hundreds] + ' Hundred';
+      if (rem > 0) str += ' ';
+    }
+    if (rem > 0) {
+      str += convertTwoDigits(rem);
+    }
+    return str;
+  }
+
+  let result = '';
+  const crores = Math.floor(n / 10000000);
+  let rem = n % 10000000;
+  const lakhs = Math.floor(rem / 100000);
+  rem = rem % 100000;
+  const thousands = Math.floor(rem / 1000);
+  rem = rem % 1000;
+
+  if (crores > 0) {
+    result += convertTwoDigits(crores) + ' Crore ';
+  }
+  if (lakhs > 0) {
+    result += convertTwoDigits(lakhs) + ' Lakhs ';
+  }
+  if (thousands > 0) {
+    result += convertTwoDigits(thousands) + ' Thousand ';
+  }
+  if (rem > 0) {
+    result += convertThreeDigits(rem) + ' ';
+  }
+
+  return result.trim();
+}
 
 export default function InvoicePrintModal({ bill, customer, onClose }) {
   if (!bill) return null;
@@ -8,221 +61,404 @@ export default function InvoicePrintModal({ bill, customer, onClose }) {
     window.print();
   };
 
-  const formatCurrency = (val) => {
-    return '₹' + Number(val || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  // Date formatter (DD/MM/YYYY)
+  const formatDate = (dateStr) => {
+    if (!dateStr) return '09/10/2026';
+    if (/^\d{2}\/\d{2}\/\d{4}$/.test(dateStr)) return dateStr;
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return dateStr;
+    const day = String(d.getDate()).padStart(2, '0');
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const year = d.getFullYear();
+    return `${day}/${month}/${year}`;
   };
 
+  // Calculations & Fallbacks based on exact provided format
+  const displayInvNo = bill.bill_no?.startsWith('SMT/') 
+    ? bill.bill_no 
+    : (bill.bill_no ? `SMT/26-27/${bill.bill_no.replace(/^[A-Za-z]+0*/, '') || bill.bill_no}` : 'SMT/26-27/118');
+
+  const displayDate = formatDate(bill.date);
+  const displaySupplyDate = formatDate(bill.date_of_supply || bill.date);
+
+  // Address details
+  const customerName = bill.customer_name || customer?.name || 'Sathyam Traders';
+  const customerAddress = customer?.address || '19/02\nT.H. Road, Tondiarpet\nChennai 600081';
+  const customerGstin = customer?.gstin || bill.customer_gstin || '33GWMPS0522P1ZZ';
+
+  // Item details
+  const productName = bill.product_name || 'MS SCRAP';
+  const hsnCode = bill.hsn_code || '7204';
+  const quantity = Number(bill.quantity) || 13410;
+  const unit = (bill.unit || 'KGS').toUpperCase();
+  const rate = Number(bill.rate) || 37.20;
+
+  // Subtotal (Before Tax)
+  const subtotal = bill.subtotal ? Number(bill.subtotal) : (quantity * rate);
+
+  // Taxes: CGST & SGST (both default to 9% or gst_rate/2), TDS (2%)
+  const gstRate = Number(bill.gst_rate) || 18;
+  const cgstRate = gstRate / 2;
+  const sgstRate = gstRate / 2;
+  const tdsRate = 2;
+
+  const cgstAmount = bill.cgst_amount ? Number(bill.cgst_amount) : (subtotal * cgstRate) / 100;
+  const sgstAmount = bill.sgst_amount ? Number(bill.sgst_amount) : (subtotal * sgstRate) / 100;
+  const tdsAmount = bill.tds_amount ? Number(bill.tds_amount) : (subtotal * tdsRate) / 100;
+
+  // Exact Total calculation
+  const calculatedGrandTotal = bill.total_amount ? Number(bill.total_amount) : Math.round(subtotal + cgstAmount + sgstAmount + tdsAmount);
+  const rawSum = subtotal + cgstAmount + sgstAmount + tdsAmount;
+  const roundoffVal = (calculatedGrandTotal - rawSum);
+  const roundoffStr = roundoffVal >= 0 ? `+ ${roundoffVal.toFixed(2)}` : `- ${Math.abs(roundoffVal).toFixed(2)}`;
+
+  const amountInWords = numberToWords(calculatedGrandTotal);
+
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <div className="modal-overlay" onClick={onClose} style={{ zIndex: 9999, overflowY: 'auto', padding: '20px 10px' }}>
       <div 
-        className="modal-content modal-lg printable-invoice" 
+        className="modal-content printable-invoice" 
         onClick={(e) => e.stopPropagation()}
-        style={{ maxWidth: '820px', padding: '36px', backgroundColor: '#ffffff', color: '#0f172a' }}
+        style={{ 
+          maxWidth: '860px', 
+          width: '100%', 
+          padding: '24px', 
+          backgroundColor: '#ffffff', 
+          color: '#000000',
+          margin: 'auto',
+          boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.2), 0 10px 10px -5px rgba(0, 0, 0, 0.08)',
+          borderRadius: '8px'
+        }}
       >
-        {/* Modal Actions (Hidden on print) */}
-        <div className="no-print" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', borderBottom: '1px solid #e2e8f0', paddingBottom: '14px' }}>
+        {/* MODAL ACTIONS (HIDDEN ON PRINT) */}
+        <div className="no-print" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px', borderBottom: '1px solid #e2e8f0', paddingBottom: '12px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{ fontSize: '13px', fontWeight: 700, color: '#64748b' }}>Invoice Preview:</span>
-            <strong style={{ fontSize: '16px', color: '#059669' }}>{bill.bill_no}</strong>
+            <Eye size={16} color="#059669" />
+            <span style={{ fontSize: '13px', fontWeight: 700, color: '#475569' }}>Invoice Viewer & Print Preview:</span>
+            <strong style={{ fontSize: '15px', color: '#0f172a', fontFamily: 'monospace' }}>{displayInvNo}</strong>
           </div>
-          <div style={{ display: 'flex', gap: '10px' }}>
-            <button className="btn btn-primary btn-sm" onClick={handlePrint}>
-              <Printer size={15} />
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button 
+              type="button" 
+              className="btn btn-primary btn-sm" 
+              onClick={handlePrint}
+              style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '6px 14px', fontSize: '12px', fontWeight: 700, backgroundColor: '#059669', borderColor: '#059669' }}
+            >
+              <Printer size={14} />
               Print / Save PDF
             </button>
-            <button className="modal-close" onClick={onClose}>
-              <X size={20} />
+            <button 
+              type="button" 
+              className="btn btn-secondary btn-sm" 
+              onClick={onClose}
+              style={{ padding: '6px 10px' }}
+            >
+              <X size={16} />
             </button>
           </div>
         </div>
 
-        {/* PRINTABLE INVOICE BODY */}
-        <div style={{ border: '2px solid #0f172a', padding: '24px', borderRadius: '4px' }}>
+        {/* ============================================================== */}
+        {/* EXACT TAX INVOICE STRUCTURE (REPLICATED 1:1 WITH TDS COLUMN) */}
+        {/* ============================================================== */}
+        <div style={{ 
+          border: '2px solid #000000', 
+          backgroundColor: '#ffffff', 
+          color: '#000000', 
+          fontFamily: 'Arial, Helvetica, sans-serif',
+          fontSize: '11px',
+          lineHeight: '1.3'
+        }}>
           
-          {/* Header */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '2px solid #0f172a', paddingBottom: '18px', marginBottom: '18px' }}>
-            <div>
-              <h1 style={{ fontSize: '24px', fontWeight: 900, letterSpacing: '0.5px', color: '#0f172a', margin: 0, textTransform: 'uppercase' }}>
-                JAZLAN STEELS & TRADERS
-              </h1>
-              <p style={{ fontSize: '12px', fontWeight: 600, color: '#475569', marginTop: '3px' }}>
-                Authorized Wholesale & Retail Distributors of TMT Rebars & Structural Steel
-              </p>
-              <div style={{ fontSize: '11.5px', color: '#334155', marginTop: '6px', lineHeight: 1.4 }}>
-                <div>National Highway Bypass, Opp. Industrial Estate, Trichy - 620015</div>
-                <div><strong>GSTIN:</strong> 33AAACJ9021K1Z8 | <strong>Phone:</strong> +91 98421 88990</div>
-              </div>
+          {/* HEADER SECTION */}
+          <div style={{ display: 'flex', alignItems: 'center', padding: '10px 14px', borderBottom: '2px solid #000000' }}>
+            {/* LOGO */}
+            <div style={{ width: '85px', flexShrink: 0 }}>
+              <svg width="75" height="75" viewBox="0 0 100 100" style={{ border: '2px solid #000', padding: '3px' }}>
+                <rect width="100" height="100" fill="#ffffff" />
+                {/* Stylized M */}
+                <path d="M 22 84 L 22 22 L 50 62 L 78 22 L 78 84" fill="none" stroke="#1e3a5f" strokeWidth="10" strokeLinecap="round" strokeLinejoin="round" />
+                {/* Stylized S interlacing */}
+                <path d="M 72 32 C 64 16, 32 16, 26 36 C 18 54, 82 50, 74 70 C 66 86, 32 86, 24 70" fill="none" stroke="#2563eb" strokeWidth="8" strokeLinecap="round" strokeLinejoin="round" opacity="0.95" />
+              </svg>
             </div>
 
-            <div style={{ textAlign: 'right' }}>
-              <div style={{ display: 'inline-block', backgroundColor: '#0f172a', color: '#ffffff', padding: '6px 14px', borderRadius: '4px', fontSize: '13px', fontWeight: 800, letterSpacing: '1px' }}>
+            {/* COMPANY DETAILS */}
+            <div style={{ flex: 1, textAlign: 'center', padding: '0 10px' }}>
+              <div style={{ display: 'inline-block', border: '1.5px solid #000', padding: '1px 16px', fontSize: '11px', fontWeight: 800, letterSpacing: '1px', marginBottom: '5px' }}>
                 TAX INVOICE
               </div>
-              <div style={{ marginTop: '10px', fontSize: '18px', fontWeight: 900, fontFamily: 'monospace', color: '#059669' }}>
-                {bill.bill_no}
+              <div style={{ fontSize: '20px', fontWeight: 900, letterSpacing: '0.8px', color: '#000', textTransform: 'uppercase' }}>
+                SMT TRADERS
               </div>
-              <div style={{ fontSize: '12px', color: '#475569', marginTop: '2px' }}>
-                <strong>Date:</strong> {bill.date}
+              <div style={{ fontSize: '10.5px', fontWeight: 700, color: '#000', marginTop: '2px' }}>
+                No.14, VELLALAR STREET, AYANAMBAKKAM, MADURAVOYAL CHENNAI- 600 095.
               </div>
-              <div style={{ fontSize: '12px', color: '#475569' }}>
-                <strong>Time:</strong> {bill.time}
+              <div style={{ fontSize: '10px', fontWeight: 700, color: '#000', marginTop: '2px' }}>
+                GSTIN: 33EWQPS4454A1ZD || EMAIL: traderssmt3@gmail.com
+              </div>
+            </div>
+
+            <div style={{ width: '85px', flexShrink: 0 }}></div>
+          </div>
+
+          {/* INVOICE & DISPATCH METADATA (2 COLUMNS) */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', borderBottom: '2px solid #000000' }}>
+            {/* LEFT COLUMN */}
+            <div style={{ borderRight: '2px solid #000000', padding: '6px 10px', fontSize: '11px', lineHeight: '1.6' }}>
+              <div style={{ display: 'flex' }}>
+                <span style={{ width: '80px', fontWeight: 700 }}>Inv No</span>
+                <span style={{ width: '15px', fontWeight: 700 }}>:</span>
+                <span style={{ fontWeight: 800 }}>{displayInvNo}</span>
+              </div>
+              <div style={{ display: 'flex' }}>
+                <span style={{ width: '80px', fontWeight: 700 }}>Inv Date</span>
+                <span style={{ width: '15px', fontWeight: 700 }}>:</span>
+                <span style={{ fontWeight: 700 }}>{displayDate}</span>
+              </div>
+              <div style={{ display: 'flex' }}>
+                <span style={{ width: '80px', fontWeight: 700 }}>PO No</span>
+                <span style={{ width: '15px', fontWeight: 700 }}>:</span>
+                <span style={{ fontWeight: 700 }}>{bill.po_no || ''}</span>
+              </div>
+            </div>
+
+            {/* RIGHT COLUMN */}
+            <div style={{ padding: '6px 10px', fontSize: '11px', lineHeight: '1.6' }}>
+              <div style={{ display: 'flex' }}>
+                <span style={{ width: '120px', fontWeight: 700 }}>Date of Supply</span>
+                <span style={{ width: '15px', fontWeight: 700 }}>:</span>
+                <span style={{ fontWeight: 700 }}>{displaySupplyDate}</span>
+              </div>
+              <div style={{ display: 'flex' }}>
+                <span style={{ width: '120px', fontWeight: 700 }}>Vehicle No</span>
+                <span style={{ width: '15px', fontWeight: 700 }}>:</span>
+                <span style={{ fontWeight: 800 }}>{bill.vehicle_number || 'TN18BJ2540'}</span>
+              </div>
+              <div style={{ display: 'flex' }}>
+                <span style={{ width: '120px', fontWeight: 700 }}>E Way Bill No</span>
+                <span style={{ width: '15px', fontWeight: 700 }}>:</span>
+                <span style={{ fontWeight: 700 }}>{bill.e_way_bill_no || '5020 8612 2626'}</span>
               </div>
             </div>
           </div>
 
-          {/* Customer & Vehicle Info Grid */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '20px', borderBottom: '1px solid #cbd5e1', paddingBottom: '16px', marginBottom: '16px' }}>
-            <div>
-              <div style={{ fontSize: '11px', fontWeight: 800, textTransform: 'uppercase', color: '#64748b', marginBottom: '4px' }}>
-                BILLED TO:
-              </div>
-              <div style={{ fontSize: '15px', fontWeight: 800, color: '#0f172a' }}>
-                {bill.customer_name}
-              </div>
-              {customer?.phone && (
-                <div style={{ fontSize: '12px', color: '#334155', marginTop: '2px' }}>
-                  <strong>Phone:</strong> {customer.phone}
-                </div>
-              )}
-              {customer?.address && (
-                <div style={{ fontSize: '12px', color: '#334155' }}>
-                  <strong>Address:</strong> {customer.address}
-                </div>
-              )}
-              {customer?.gstin && (
-                <div style={{ fontSize: '12px', color: '#334155' }}>
-                  <strong>GSTIN:</strong> {customer.gstin}
-                </div>
-              )}
+          {/* ADDRESS SECTION (BILLING & SHIPPING) */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', borderBottom: '2px solid #000000' }}>
+            {/* BILLING ADDRESS */}
+            <div style={{ borderRight: '2px solid #000000', padding: '6px 10px', minHeight: '90px', fontSize: '11px', lineHeight: '1.35' }}>
+              <div style={{ fontWeight: 800, textDecoration: 'none', marginBottom: '3px' }}>Billing Address:</div>
+              <div style={{ fontWeight: 700 }}>{customerName}</div>
+              <div style={{ whiteSpace: 'pre-line', margin: '2px 0' }}>{customerAddress}</div>
+              <div style={{ fontWeight: 700, marginTop: '3px' }}>GSTIN : {customerGstin}</div>
             </div>
 
-            <div style={{ backgroundColor: '#f8fafc', padding: '10px 14px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
-              <div style={{ fontSize: '11px', fontWeight: 800, textTransform: 'uppercase', color: '#64748b', marginBottom: '6px' }}>
-                DISPATCH & LOGISTICS:
-              </div>
-              <div style={{ fontSize: '12.5px', color: '#0f172a', marginBottom: '3px' }}>
-                <strong>Vehicle No:</strong> <span style={{ fontFamily: 'monospace', fontWeight: 700 }}>{bill.vehicle_number || 'Direct Customer Pickup'}</span>
-              </div>
-              <div style={{ fontSize: '12.5px', color: '#0f172a', marginBottom: '3px' }}>
-                <strong>Payment Mode:</strong> {bill.payment_mode}
-              </div>
-              {bill.upi_reference && (
-                <div style={{ fontSize: '12px', color: '#2563eb' }}>
-                  <strong>Ref / Txn ID:</strong> {bill.upi_reference}
-                </div>
-              )}
-              <div style={{ fontSize: '12px', color: '#64748b' }}>
-                <strong>Billed By:</strong> {bill.biller_name || 'Admin'}
-              </div>
+            {/* SHIPPING ADDRESS */}
+            <div style={{ padding: '6px 10px', minHeight: '90px', fontSize: '11px', lineHeight: '1.35' }}>
+              <div style={{ fontWeight: 800, textDecoration: 'none', marginBottom: '3px' }}>Shipping Address:</div>
+              <div style={{ fontWeight: 700 }}>{customerName}</div>
+              <div style={{ whiteSpace: 'pre-line', margin: '2px 0' }}>{customerAddress}</div>
             </div>
           </div>
 
-          {/* Itemized Table */}
-          <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '18px' }}>
+          {/* PRODUCT & ITEMS TABLE WITH ADDITIONAL 2% TDS COLUMN */}
+          <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '11px' }}>
             <thead>
-              <tr style={{ backgroundColor: '#f1f5f9', borderTop: '1px solid #0f172a', borderBottom: '1px solid #0f172a' }}>
-                <th style={{ padding: '8px 10px', textAlign: 'left', fontSize: '11.5px', fontWeight: 800 }}>S.No</th>
-                <th style={{ padding: '8px 10px', textAlign: 'left', fontSize: '11.5px', fontWeight: 800 }}>Item Description</th>
-                <th style={{ padding: '8px 10px', textAlign: 'right', fontSize: '11.5px', fontWeight: 800 }}>Qty / Unit</th>
-                <th style={{ padding: '8px 10px', textAlign: 'right', fontSize: '11.5px', fontWeight: 800 }}>Rate (₹)</th>
-                <th style={{ padding: '8px 10px', textAlign: 'right', fontSize: '11.5px', fontWeight: 800 }}>Amount (₹)</th>
+              <tr style={{ borderBottom: '2px solid #000000' }}>
+                <th style={{ borderRight: '2px solid #000000', padding: '6px 4px', textAlign: 'center', width: '36px', fontWeight: 800 }}>NO</th>
+                <th style={{ borderRight: '2px solid #000000', padding: '6px 8px', fontWeight: 800 }}>Product Description</th>
+                <th style={{ borderRight: '2px solid #000000', padding: '6px 6px', textAlign: 'center', width: '75px', fontWeight: 800 }}>HSN Code</th>
+                <th style={{ borderRight: '2px solid #000000', padding: '6px 8px', textAlign: 'right', width: '90px', fontWeight: 800 }}>QTY</th>
+                <th style={{ borderRight: '2px solid #000000', padding: '6px 6px', textAlign: 'center', width: '55px', fontWeight: 800 }}>Unit</th>
+                <th style={{ borderRight: '2px solid #000000', padding: '6px 8px', textAlign: 'right', width: '75px', fontWeight: 800 }}>Rate</th>
+                <th style={{ borderRight: '2px solid #000000', padding: '6px 8px', textAlign: 'right', width: '95px', fontWeight: 800 }}>Amount</th>
+                <th style={{ padding: '6px 8px', textAlign: 'right', width: '80px', fontWeight: 800 }}>2% TDS</th>
               </tr>
             </thead>
             <tbody>
-              <tr style={{ borderBottom: '1px solid #e2e8f0' }}>
-                <td style={{ padding: '10px', fontSize: '12px' }}>1</td>
-                <td style={{ padding: '10px', fontSize: '13px', fontWeight: 700 }}>
-                  {bill.product_name}
+              {/* MAIN ITEM ROW */}
+              <tr style={{ minHeight: '38px', verticalAlign: 'top' }}>
+                <td style={{ borderRight: '2px solid #000000', padding: '8px 4px', textAlign: 'center', fontWeight: 700 }}>1</td>
+                <td style={{ borderRight: '2px solid #000000', padding: '8px 8px', fontWeight: 800 }}>{productName}</td>
+                <td style={{ borderRight: '2px solid #000000', padding: '8px 6px', textAlign: 'center', fontWeight: 700 }}>{hsnCode}</td>
+                <td style={{ borderRight: '2px solid #000000', padding: '8px 8px', textAlign: 'right', fontWeight: 700 }}>
+                  {quantity.toLocaleString('en-IN', { minimumFractionDigits: 3, maximumFractionDigits: 3 })}
                 </td>
-                <td style={{ padding: '10px', textAlign: 'right', fontSize: '12.5px', fontFamily: 'monospace', fontWeight: 700 }}>
-                  {bill.quantity} {bill.unit || 'Tons'}
+                <td style={{ borderRight: '2px solid #000000', padding: '8px 6px', textAlign: 'center', fontWeight: 700 }}>{unit}</td>
+                <td style={{ borderRight: '2px solid #000000', padding: '8px 8px', textAlign: 'right', fontWeight: 700 }}>
+                  {rate.toFixed(2)}
                 </td>
-                <td style={{ padding: '10px', textAlign: 'right', fontSize: '12.5px', fontFamily: 'monospace' }}>
-                  {formatCurrency(bill.rate)}
+                <td style={{ borderRight: '2px solid #000000', padding: '8px 8px', textAlign: 'right', fontWeight: 800 }}>
+                  {subtotal.toFixed(2)}
                 </td>
-                <td style={{ padding: '10px', textAlign: 'right', fontSize: '13px', fontFamily: 'monospace', fontWeight: 800 }}>
-                  {formatCurrency(bill.subtotal)}
+                <td style={{ padding: '8px 8px', textAlign: 'right', fontWeight: 700, color: '#000000' }}>
+                  {tdsAmount.toFixed(2)}
+                </td>
+              </tr>
+
+              {/* TOTAL QTY & SUB TOTAL ROW */}
+              <tr style={{ borderTop: '2px solid #000000' }}>
+                <td style={{ borderRight: '2px solid #000000' }}></td>
+                <td style={{ borderRight: '2px solid #000000' }}></td>
+                <td style={{ borderRight: '2px solid #000000', padding: '5px 6px', textAlign: 'center', fontWeight: 800 }}>
+                  Total Qty
+                </td>
+                <td style={{ borderRight: '2px solid #000000', padding: '5px 8px', textAlign: 'right', fontWeight: 800 }}>
+                  {quantity.toFixed(3)}
+                </td>
+                <td colSpan={2} style={{ borderRight: '2px solid #000000', padding: '5px 8px', fontWeight: 700 }}>
+                  Sub Total
+                </td>
+                <td colSpan={2} style={{ padding: '5px 8px', textAlign: 'right', fontWeight: 800 }}>
+                  {subtotal.toFixed(2)}
+                </td>
+              </tr>
+
+              {/* CGST ROW */}
+              <tr style={{ borderTop: '1px solid #000000' }}>
+                <td colSpan={4} style={{ borderRight: '2px solid #000000' }}></td>
+                <td colSpan={2} style={{ borderRight: '2px solid #000000', padding: '4px 8px', fontWeight: 700 }}>
+                  CGST @ {cgstRate} %
+                </td>
+                <td colSpan={2} style={{ padding: '4px 8px', textAlign: 'right', fontWeight: 800 }}>
+                  {cgstAmount.toFixed(2)}
+                </td>
+              </tr>
+
+              {/* SGST ROW */}
+              <tr style={{ borderTop: '1px solid #000000' }}>
+                <td colSpan={4} style={{ borderRight: '2px solid #000000' }}></td>
+                <td colSpan={2} style={{ borderRight: '2px solid #000000', padding: '4px 8px', fontWeight: 700 }}>
+                  SGST @ {sgstRate} %
+                </td>
+                <td colSpan={2} style={{ padding: '4px 8px', textAlign: 'right', fontWeight: 800 }}>
+                  {sgstAmount.toFixed(2)}
+                </td>
+              </tr>
+
+              {/* 2% TDS ROW */}
+              <tr style={{ borderTop: '1px solid #000000' }}>
+                <td colSpan={4} style={{ borderRight: '2px solid #000000' }}></td>
+                <td colSpan={2} style={{ borderRight: '2px solid #000000', padding: '4px 8px', fontWeight: 700 }}>
+                  TDS @ {tdsRate} %
+                </td>
+                <td colSpan={2} style={{ padding: '4px 8px', textAlign: 'right', fontWeight: 800 }}>
+                  {tdsAmount.toFixed(2)}
+                </td>
+              </tr>
+
+              {/* ROUNDOFF ROW */}
+              <tr style={{ borderTop: '1px solid #000000' }}>
+                <td colSpan={4} style={{ borderRight: '2px solid #000000' }}></td>
+                <td colSpan={2} style={{ borderRight: '2px solid #000000', padding: '4px 8px', fontWeight: 700 }}>
+                  Roundoff
+                </td>
+                <td colSpan={2} style={{ padding: '4px 8px', textAlign: 'right', fontWeight: 700 }}>
+                  {roundoffStr}
+                </td>
+              </tr>
+
+              {/* GRAND TOTAL ROW */}
+              <tr style={{ borderTop: '2px solid #000000', borderBottom: '2px solid #000000' }}>
+                <td colSpan={4} style={{ borderRight: '2px solid #000000' }}></td>
+                <td colSpan={2} style={{ borderRight: '2px solid #000000', padding: '6px 8px', fontWeight: 900, fontSize: '11.5px' }}>
+                  Grand Total
+                </td>
+                <td colSpan={2} style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 900, fontSize: '12px' }}>
+                  {calculatedGrandTotal.toFixed(2)}
                 </td>
               </tr>
             </tbody>
           </table>
 
-          {/* Totals & Tax Calculation Breakdown */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '20px', alignItems: 'flex-start' }}>
-            <div>
-              {bill.notes && (
-                <div style={{ padding: '8px 12px', backgroundColor: '#f8fafc', border: '1px dashed #cbd5e1', borderRadius: '4px', fontSize: '11.5px', color: '#475569', marginBottom: '12px' }}>
-                  <strong>Notes:</strong> {bill.notes}
-                </div>
-              )}
-              <div style={{ fontSize: '11px', color: '#64748b', lineHeight: 1.5 }}>
-                <div><strong>Terms & Conditions:</strong></div>
-                <div>1. Goods once sold will not be taken back without valid approval.</div>
-                <div>2. Interest @ 18% per annum will be charged on overdue payments.</div>
-                <div>3. Subject to local jurisdiction only.</div>
-              </div>
+          {/* TOTAL INVOICE AMOUNT IN WORDS */}
+          <div style={{ padding: '7px 10px', borderBottom: '2px solid #000000', fontSize: '11px' }}>
+            <div style={{ fontWeight: 800, fontSize: '11.5px', marginBottom: '2px' }}>
+              Total Invoice Amount in words:
             </div>
-
-            <div style={{ backgroundColor: '#f8fafc', padding: '12px 16px', borderRadius: '6px', border: '1px solid #cbd5e1' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#475569', marginBottom: '4px' }}>
-                <span>Subtotal:</span>
-                <span style={{ fontFamily: 'monospace', fontWeight: 600 }}>{formatCurrency(bill.subtotal)}</span>
-              </div>
-              {bill.rent_transport > 0 && (
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#475569', marginBottom: '4px' }}>
-                  <span>Rent:</span>
-                  <span style={{ fontFamily: 'monospace', fontWeight: 600 }}>{formatCurrency(bill.rent_transport)}</span>
-                </div>
-              )}
-              {bill.cgst_amount > 0 && (
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#475569', marginBottom: '4px' }}>
-                  <span>CGST ({bill.gst_rate / 2}%):</span>
-                  <span style={{ fontFamily: 'monospace', fontWeight: 600 }}>{formatCurrency(bill.cgst_amount)}</span>
-                </div>
-              )}
-              {bill.sgst_amount > 0 && (
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#475569', marginBottom: '6px' }}>
-                  <span>SGST ({bill.gst_rate / 2}%):</span>
-                  <span style={{ fontFamily: 'monospace', fontWeight: 600 }}>{formatCurrency(bill.sgst_amount)}</span>
-                </div>
-              )}
-              {bill.tds_amount > 0 && (
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#dc2626', marginBottom: '6px' }}>
-                  <span>Less TDS:</span>
-                  <span style={{ fontFamily: 'monospace', fontWeight: 600 }}>-{formatCurrency(bill.tds_amount)}</span>
-                </div>
-              )}
-
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '16px', fontWeight: 900, color: '#0f172a', borderTop: '2px solid #0f172a', paddingTop: '8px', marginTop: '4px', marginBottom: '8px' }}>
-                <span>Grand Total:</span>
-                <span style={{ fontFamily: 'monospace', color: '#059669' }}>{formatCurrency(bill.total_amount)}</span>
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12.5px', color: '#15803d', fontWeight: 700, marginBottom: '4px' }}>
-                <span>Amount Received:</span>
-                <span style={{ fontFamily: 'monospace' }}>{formatCurrency(bill.amount_received)}</span>
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', color: bill.balance_due > 0 ? '#b91c1c' : '#15803d', fontWeight: 800 }}>
-                <span>Balance Due:</span>
-                <span style={{ fontFamily: 'monospace' }}>{formatCurrency(bill.balance_due)}</span>
-              </div>
+            <div style={{ fontWeight: 800, textTransform: 'capitalize' }}>
+              INR Rupees {amountInWords} Only
             </div>
           </div>
 
-          {/* Footer Signature */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginTop: '36px', paddingTop: '16px' }}>
-            <div style={{ fontSize: '11px', color: '#64748b' }}>
-              <div>Customer Signature: __________________</div>
+          {/* BANK DETAILS SECTION */}
+          <div style={{ padding: '8px 10px', fontSize: '10.5px', lineHeight: '1.5' }}>
+            <div style={{ fontWeight: 700 }}>Account Name: SMT TRADERS</div>
+            <div style={{ fontWeight: 700 }}>Branch Name: MOGAPPAIR WEST,CH-37.</div>
+            <div style={{ fontWeight: 700 }}>Bank Name: HDFC BANK</div>
+            <div style={{ fontWeight: 700 }}>Account Number: 50200066429387</div>
+            <div style={{ fontWeight: 700 }}>IFSC Code : HDFC0001765</div>
+          </div>
+
+          {/* HSN TAX SUMMARY TABLE (BORDERED SUB-TABLE AT BOTTOM) */}
+          <div style={{ padding: '0 10px 10px 10px' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'center', fontSize: '9.5px', border: '1.5px solid #000000' }}>
+              <thead>
+                <tr style={{ borderBottom: '1px solid #000000' }}>
+                  <th rowSpan={2} style={{ borderRight: '1px solid #000', padding: '4px', fontWeight: 800 }}>HSN Code</th>
+                  <th rowSpan={2} style={{ borderRight: '1px solid #000', padding: '4px', fontWeight: 800 }}>Taxable Amt</th>
+                  <th colSpan={2} style={{ borderRight: '1px solid #000', padding: '3px', fontWeight: 800 }}>CGST</th>
+                  <th colSpan={2} style={{ borderRight: '1px solid #000', padding: '3px', fontWeight: 800 }}>SGST</th>
+                  <th colSpan={2} style={{ borderRight: '1px solid #000', padding: '3px', fontWeight: 800 }}>TDS</th>
+                  <th rowSpan={2} style={{ padding: '4px', fontWeight: 800 }}>Grand Total</th>
+                </tr>
+                <tr style={{ borderBottom: '1px solid #000000' }}>
+                  <th style={{ borderRight: '1px solid #000', padding: '2px 4px', fontWeight: 700 }}>CGST %</th>
+                  <th style={{ borderRight: '1px solid #000', padding: '2px 4px', fontWeight: 700 }}>CGST Amt</th>
+                  <th style={{ borderRight: '1px solid #000', padding: '2px 4px', fontWeight: 700 }}>SGST %</th>
+                  <th style={{ borderRight: '1px solid #000', padding: '2px 4px', fontWeight: 700 }}>SGST Amt</th>
+                  <th style={{ borderRight: '1px solid #000', padding: '2px 4px', fontWeight: 700 }}>TDS %</th>
+                  <th style={{ borderRight: '1px solid #000', padding: '2px 4px', fontWeight: 700 }}>TDS Amt</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr style={{ borderBottom: '1px solid #000000' }}>
+                  <td style={{ borderRight: '1px solid #000', padding: '4px' }}>{hsnCode}</td>
+                  <td style={{ borderRight: '1px solid #000', padding: '4px', textAlign: 'right' }}>{subtotal.toFixed(2)}</td>
+                  <td style={{ borderRight: '1px solid #000', padding: '4px' }}>{cgstRate.toFixed(2)}</td>
+                  <td style={{ borderRight: '1px solid #000', padding: '4px', textAlign: 'right' }}>{cgstAmount.toFixed(2)}</td>
+                  <td style={{ borderRight: '1px solid #000', padding: '4px' }}>{sgstRate.toFixed(2)}</td>
+                  <td style={{ borderRight: '1px solid #000', padding: '4px', textAlign: 'right' }}>{sgstAmount.toFixed(2)}</td>
+                  <td style={{ borderRight: '1px solid #000', padding: '4px' }}>{tdsRate.toFixed(2)}</td>
+                  <td style={{ borderRight: '1px solid #000', padding: '4px', textAlign: 'right' }}>{tdsAmount.toFixed(2)}</td>
+                  <td style={{ padding: '4px', textAlign: 'right', fontWeight: 800 }}>{calculatedGrandTotal.toFixed(2)}</td>
+                </tr>
+                {/* SUMMARY ROW */}
+                <tr style={{ fontWeight: 800 }}>
+                  <td style={{ borderRight: '1px solid #000', padding: '4px' }}>Total</td>
+                  <td style={{ borderRight: '1px solid #000', padding: '4px', textAlign: 'right' }}>{subtotal.toFixed(2)}</td>
+                  <td style={{ borderRight: '1px solid #000', padding: '4px' }}></td>
+                  <td style={{ borderRight: '1px solid #000', padding: '4px', textAlign: 'right' }}>{cgstAmount.toFixed(2)}</td>
+                  <td style={{ borderRight: '1px solid #000', padding: '4px' }}></td>
+                  <td style={{ borderRight: '1px solid #000', padding: '4px', textAlign: 'right' }}>{sgstAmount.toFixed(2)}</td>
+                  <td style={{ borderRight: '1px solid #000', padding: '4px' }}></td>
+                  <td style={{ borderRight: '1px solid #000', padding: '4px', textAlign: 'right' }}>{tdsAmount.toFixed(2)}</td>
+                  <td style={{ padding: '4px', textAlign: 'right' }}>{calculatedGrandTotal.toFixed(2)}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          {/* DECLARATION & SIGNATURE FOOTER */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', borderTop: '2px solid #000000', padding: '8px 10px' }}>
+            {/* DECLARATION */}
+            <div style={{ fontSize: '9.5px', lineHeight: '1.4', paddingRight: '10px' }}>
+              <div style={{ fontWeight: 800, marginBottom: '2px' }}>Declaration:</div>
+              <div>1. Goods once sold will not be taken back or exchanged.</div>
+              <div>2. Seller is not responsible for any loss or damaged of goods in transit.</div>
+              <div>3. Buyer undertakes the submit prescribed ST declaration to sender on demand.</div>
+              <div style={{ marginTop: '2px', fontWeight: 600 }}>Disputes if any will be subject to seller court jurisdiction.</div>
             </div>
-            <div style={{ textAlign: 'right', fontSize: '11px', color: '#0f172a' }}>
-              <div style={{ fontWeight: 800 }}>For JAZLAN STEELS & TRADERS</div>
-              <div style={{ height: '40px' }}></div>
-              <div>Authorized Signatory</div>
+
+            {/* AUTHORIZED SIGNATORY */}
+            <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: '65px' }}>
+              <div style={{ fontWeight: 800, fontSize: '11px' }}>For M/s. SMT TRADERS</div>
+              <div style={{ fontWeight: 800, fontSize: '11px' }}>Authorized Signatory</div>
             </div>
           </div>
 
         </div>
+
       </div>
     </div>
   );

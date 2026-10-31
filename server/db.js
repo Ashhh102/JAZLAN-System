@@ -297,8 +297,8 @@ function initDatabase() {
     // ignore
   }
 
-  // Seed initial data if database is empty
-  seedInitialData();
+  // Seed initial data disabled to keep database fresh for manual entry
+  // seedInitialData();
 }
 
 function getNextBillNumber() {

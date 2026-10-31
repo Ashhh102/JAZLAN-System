@@ -14,7 +14,8 @@ import {
   CheckCircle2,
   AlertCircle,
   FileText,
-  Printer
+  Printer,
+  Eye
 } from 'lucide-react';
 import InvoicePrintModal from '../components/InvoicePrintModal';
 
@@ -270,6 +271,47 @@ export default function BillingPage({ onBillCreated, nextBillNo }) {
     setManualTotalAmount('');
     setNotes('');
     setCreatedBill(null);
+  };
+
+  // Preview Current Bill Form Before Submitting
+  const handlePreviewCurrentBill = () => {
+    const custObj = customers.find(c => c.name.toLowerCase() === customerName.toLowerCase());
+    const prodObj = products.find(p => p.name.toLowerCase() === productName.toLowerCase());
+
+    const previewData = {
+      bill_no: nextBillNo || 'JS001',
+      date: billDate || new Date().toISOString().split('T')[0],
+      time: new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' }),
+      customer_id: custObj?.id || 1,
+      customer_name: customerName.trim() || 'Sathyam Traders',
+      customer_address: customerAddress || custObj?.address || '19/02\nT.H. Road, Tondiarpet\nChennai 600081',
+      customer_gstin: customerGstin || custObj?.gstin || '33GWMPS0522P1ZZ',
+      product_id: productId || prodObj?.id || 1,
+      product_name: productName.trim() || 'MS SCRAP',
+      hsn_code: prodObj?.hsn_code || '7204',
+      quantity: netKg || 13410,
+      unit: prodObj?.unit || 'KGS',
+      rate: rateVal || 37.20,
+      subtotal: subtotal || 498852,
+      rent_transport: rentVal,
+      gst_rate: totalGstRate || 18,
+      cgst_amount: cgstAmount || 44896.68,
+      sgst_amount: sgstAmount || 44896.68,
+      tds_rate: tdsRate || 2,
+      tds_amount: tdsAmount || 9977.04,
+      total_amount: effectiveTotal || 588646,
+      amount_received: paidNum,
+      balance_due: remainingCreditDue,
+      payment_mode: paidNum === 0 ? 'Credit' : paymentMode,
+      payment_status: remainingCreditDue === 0 ? 'Paid' : paidNum > 0 ? 'Partial' : 'Credit',
+      vehicle_number: vehicleNumber.trim() || 'TN18BJ2540',
+      driver_name: driverName.trim() || 'Direct',
+      biller_name: billerName || 'Admin',
+      e_way_bill_no: '5020 8612 2626'
+    };
+
+    setCreatedBill(previewData);
+    setShowPrintModal(true);
   };
 
   // Quick Add Vehicle
@@ -908,14 +950,40 @@ export default function BillingPage({ onBillCreated, nextBillNo }) {
               )}
             </div>
 
-            <button
-              type="submit"
-              className="btn-issue-bill"
-              disabled={submitting}
-            >
-              {submitting ? 'Issuing Bill...' : `Save & Issue Bill (${nextBillNo || 'JS001'})`}
-              <ArrowRight size={15} />
-            </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                style={{ 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  gap: '6px', 
+                  padding: '9px 16px', 
+                  height: '38px', 
+                  fontSize: '12.5px', 
+                  fontWeight: 700, 
+                  borderRadius: '6px', 
+                  border: '1.5px solid #059669', 
+                  color: '#065f46', 
+                  backgroundColor: '#ecfdf5', 
+                  cursor: 'pointer' 
+                }}
+                onClick={handlePreviewCurrentBill}
+                title="Preview Tax Invoice before saving & issuing"
+              >
+                <Eye size={15} color="#059669" />
+                Preview Bill
+              </button>
+
+              <button
+                type="submit"
+                className="btn-issue-bill"
+                disabled={submitting}
+              >
+                {submitting ? 'Issuing Bill...' : `Save & Issue Bill (${nextBillNo || 'JS001'})`}
+                <ArrowRight size={15} />
+              </button>
+            </div>
           </div>
 
         </div>
@@ -935,19 +1003,22 @@ export default function BillingPage({ onBillCreated, nextBillNo }) {
         </div>
 
         <div className="table-container" style={{ border: 'none', margin: 0, overflowX: 'auto' }}>
-          <table className="data-table" style={{ width: '100%', minWidth: '1500px' }}>
+          <table className="data-table" style={{ width: '100%', minWidth: '1850px' }}>
             <thead>
               <tr>
                 <th style={{ whiteSpace: 'nowrap', padding: '10px 12px' }}>Bill No.</th>
                 <th style={{ whiteSpace: 'nowrap', padding: '10px 12px' }}>Date & Time</th>
                 <th style={{ whiteSpace: 'nowrap', padding: '10px 12px' }}>Customer</th>
-                <th style={{ whiteSpace: 'nowrap', padding: '10px 12px' }}>Product & Qty (kg)</th>
+                <th style={{ whiteSpace: 'nowrap', padding: '10px 12px' }}>Material</th>
+                <th style={{ whiteSpace: 'nowrap', padding: '10px 12px' }}>Quantity</th>
                 <th style={{ whiteSpace: 'nowrap', padding: '10px 12px', textAlign: 'right' }}>Rate (₹)</th>
+                <th style={{ whiteSpace: 'nowrap', padding: '10px 12px', textAlign: 'right' }}>Bought Cost (₹)</th>
                 <th style={{ whiteSpace: 'nowrap', padding: '10px 12px', textAlign: 'right' }}>Before Tax (₹)</th>
                 <th style={{ whiteSpace: 'nowrap', padding: '10px 12px', textAlign: 'right' }}>2% TDS (₹)</th>
                 <th style={{ whiteSpace: 'nowrap', padding: '10px 12px', textAlign: 'right' }}>CGST (₹)</th>
                 <th style={{ whiteSpace: 'nowrap', padding: '10px 12px', textAlign: 'right' }}>SGST (₹)</th>
                 <th style={{ whiteSpace: 'nowrap', padding: '10px 12px', textAlign: 'right' }}>Total Bill Amount (₹)</th>
+                <th style={{ whiteSpace: 'nowrap', padding: '10px 12px', textAlign: 'right' }}>Profit (₹)</th>
                 <th style={{ whiteSpace: 'nowrap', padding: '10px 12px' }}>Supplier</th>
                 <th style={{ whiteSpace: 'nowrap', padding: '10px 12px', textAlign: 'right' }}>Transferred Amount (₹)</th>
                 <th style={{ whiteSpace: 'nowrap', padding: '10px 12px', textAlign: 'right' }}>Pending Balance (₹)</th>
@@ -960,21 +1031,34 @@ export default function BillingPage({ onBillCreated, nextBillNo }) {
             <tbody>
               {recentBills.length === 0 ? (
                 <tr>
-                  <td colSpan="17" style={{ textAlign: 'center', padding: '24px', color: '#83998c', fontSize: '12.5px' }}>
+                  <td colSpan="20" style={{ textAlign: 'center', padding: '24px', color: '#83998c', fontSize: '12.5px' }}>
                     No bills issued yet. Generated invoices will appear here instantly.
                   </td>
                 </tr>
               ) : (
                 recentBills.map(b => {
-                  const qtyInKg = b.unit?.toLowerCase() === 'kg' 
+                  const isKg = b.unit?.toLowerCase() === 'kg';
+                  const qtyInKg = isKg 
                     ? Math.round(Number(b.quantity) || 0) 
                     : Math.round((Number(b.quantity) || 0) * 1000);
+                  const qtyInTons = isKg 
+                    ? Number(((Number(b.quantity) || 0) / 1000).toFixed(3)) 
+                    : (Number(b.quantity) || 0);
+
+                  const matchedProd = products.find(p => p.id === b.product_id || (p.name && b.product_name && p.name.trim().toLowerCase() === b.product_name.trim().toLowerCase()));
+                  const catalogRate = matchedProd?.default_bought_rate ?? b.catalog_bought_rate ?? b.bought_price_per_unit ?? 0;
+                  const totalBoughtCost = Math.round(qtyInTons * Number(catalogRate || 0));
+
                   const beforeTax = Math.round((Number(b.subtotal) || 0) + (Number(b.rent_transport) || 0));
                   const tdsVal = Number(b.tds_amount) > 0 
                     ? Number(b.tds_amount) 
                     : Math.round((beforeTax * (Number(b.tds_rate) || 2)) / 100);
-                  const cgstVal = Number(b.cgst_amount) || Math.round((beforeTax * 0.08));
-                  const sgstVal = Number(b.sgst_amount) || Math.round((beforeTax * 0.08));
+                  const cgstVal = Number(b.cgst_amount) || Math.round((beforeTax * 0.09));
+                  const sgstVal = Number(b.sgst_amount) || Math.round((beforeTax * 0.09));
+                  const totalAmt = Number(b.total_amount) || (beforeTax + cgstVal + sgstVal - tdsVal);
+
+                  // Individual invoice profit: total bill amount - (tds + cgst + sgst + bought cost)
+                  const invoiceProfit = Math.round(totalAmt - (tdsVal + cgstVal + sgstVal + totalBoughtCost));
 
                   return (
                     <tr key={b.id}>
@@ -1004,48 +1088,78 @@ export default function BillingPage({ onBillCreated, nextBillNo }) {
                         {b.customer_name}
                       </td>
 
-                      {/* 4. PRODUCT & QTY (KG) */}
+                      {/* 4. MATERIAL */}
                       <td style={{ whiteSpace: 'nowrap', padding: '10px 12px' }}>
                         <div style={{ fontWeight: 700, color: '#0f172a' }}>{b.product_name}</div>
-                        <div style={{ fontSize: '12px', color: '#059669', fontWeight: 800, fontFamily: 'monospace' }}>
+                      </td>
+
+                      {/* 5. QUANTITY (BOTH KGS & TONS) */}
+                      <td style={{ whiteSpace: 'nowrap', padding: '10px 12px' }}>
+                        <div style={{ fontSize: '12.5px', color: '#059669', fontWeight: 800, fontFamily: 'monospace' }}>
                           {qtyInKg.toLocaleString('en-IN')} kg
-                          <span style={{ fontSize: '10.5px', color: '#64748b', fontWeight: 500, marginLeft: '4px' }}>
-                            ({b.quantity} {b.unit || 'Tons'})
-                          </span>
+                        </div>
+                        <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 600 }}>
+                          {qtyInTons} {b.unit || 'Tons'}
                         </div>
                       </td>
 
-                      {/* 5. RATE */}
+                      {/* 6. RATE */}
                       <td style={{ whiteSpace: 'nowrap', padding: '10px 12px', textAlign: 'right', fontWeight: 700 }} className="font-mono">
                         ₹{(Number(b.rate) || 0).toLocaleString('en-IN')}
                       </td>
 
-                      {/* 6. BEFORE TAX */}
+                      {/* 7. BOUGHT COST (FROM PRODUCT CATALOG) */}
+                      <td style={{ whiteSpace: 'nowrap', padding: '10px 12px', textAlign: 'right' }} className="font-mono">
+                        <div style={{ fontWeight: 700, color: '#1e293b' }}>
+                          ₹{totalBoughtCost.toLocaleString('en-IN')}
+                        </div>
+                        <div style={{ fontSize: '10.5px', color: '#64748b' }}>
+                          (@ ₹{Number(catalogRate || 0).toLocaleString('en-IN')}/T)
+                        </div>
+                      </td>
+
+                      {/* 8. BEFORE TAX */}
                       <td style={{ whiteSpace: 'nowrap', padding: '10px 12px', textAlign: 'right', fontWeight: 700, color: '#334155' }} className="font-mono">
                         ₹{beforeTax.toLocaleString('en-IN')}
                       </td>
 
-                      {/* 7. 2% TDS */}
+                      {/* 9. 2% TDS */}
                       <td style={{ whiteSpace: 'nowrap', padding: '10px 12px', textAlign: 'right', color: '#ea580c', fontWeight: 700 }} className="font-mono">
                         ₹{tdsVal.toLocaleString('en-IN')}
                       </td>
 
-                      {/* 8. CGST */}
+                      {/* 10. CGST */}
                       <td style={{ whiteSpace: 'nowrap', padding: '10px 12px', textAlign: 'right', color: '#4f46e5', fontWeight: 700 }} className="font-mono">
                         ₹{cgstVal.toLocaleString('en-IN')}
                       </td>
 
-                      {/* 9. SGST */}
+                      {/* 11. SGST */}
                       <td style={{ whiteSpace: 'nowrap', padding: '10px 12px', textAlign: 'right', color: '#7c3aed', fontWeight: 700 }} className="font-mono">
                         ₹{sgstVal.toLocaleString('en-IN')}
                       </td>
 
-                      {/* 10. TOTAL BILL AMOUNT */}
+                      {/* 12. TOTAL BILL AMOUNT */}
                       <td style={{ whiteSpace: 'nowrap', padding: '10px 12px', textAlign: 'right', fontWeight: 800, fontFamily: 'monospace', color: '#064e3b' }}>
-                        ₹{(Number(b.total_amount) || 0).toLocaleString('en-IN')}
+                        ₹{totalAmt.toLocaleString('en-IN')}
                       </td>
 
-                      {/* 11. SUPPLIER */}
+                      {/* 13. PROFIT */}
+                      <td style={{ whiteSpace: 'nowrap', padding: '10px 12px', textAlign: 'right' }} className="font-mono">
+                        <span style={{ 
+                          fontWeight: 800, 
+                          fontSize: '12px',
+                          color: invoiceProfit >= 0 ? '#15803d' : '#b91c1c',
+                          backgroundColor: invoiceProfit >= 0 ? '#f0fdf4' : '#fef2f2',
+                          border: `1px solid ${invoiceProfit >= 0 ? '#bbf7d0' : '#fecaca'}`,
+                          padding: '3px 8px',
+                          borderRadius: '5px',
+                          display: 'inline-block'
+                        }}>
+                          {invoiceProfit >= 0 ? `+₹${invoiceProfit.toLocaleString('en-IN')}` : `-₹${Math.abs(invoiceProfit).toLocaleString('en-IN')}`}
+                        </span>
+                      </td>
+
+                      {/* 14. SUPPLIER */}
                       <td style={{ whiteSpace: 'nowrap', padding: '10px 12px' }}>
                         <span style={{ fontSize: '12px', fontWeight: 600, color: '#475569' }}>
                           {b.supplier_name || 'Direct / Internal'}
@@ -1086,19 +1200,34 @@ export default function BillingPage({ onBillCreated, nextBillNo }) {
 
                       {/* 17. ACTION */}
                       <td style={{ whiteSpace: 'nowrap', padding: '10px 12px', textAlign: 'center' }}>
-                        <button
-                          type="button"
-                          className="btn btn-secondary btn-sm"
-                          style={{ padding: '3px 8px', fontSize: '11px', gap: '4px' }}
-                          onClick={() => {
-                            setCreatedBill(b);
-                            setShowPrintModal(true);
-                          }}
-                          title="Print Tax Invoice"
-                        >
-                          <Printer size={12} color="#059669" />
-                          Print
-                        </button>
+                        <div style={{ display: 'inline-flex', gap: '5px' }}>
+                          <button
+                            type="button"
+                            className="btn btn-secondary btn-sm"
+                            style={{ padding: '3px 8px', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px' }}
+                            onClick={() => {
+                              setCreatedBill(b);
+                              setShowPrintModal(true);
+                            }}
+                            title="View Tax Invoice Details"
+                          >
+                            <Eye size={12} color="#0284c7" />
+                            View
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-secondary btn-sm"
+                            style={{ padding: '3px 8px', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px' }}
+                            onClick={() => {
+                              setCreatedBill(b);
+                              setShowPrintModal(true);
+                            }}
+                            title="Print Tax Invoice"
+                          >
+                            <Printer size={12} color="#059669" />
+                            Print
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );

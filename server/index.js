@@ -36,6 +36,45 @@ app.post('/api/products', (req, res) => {
     const { name, category, hsn_code, unit, default_sell_rate, default_bought_rate, gst_rate, stock_qty } = req.body;
     if (!name) return res.status(400).json({ error: 'Product name is required' });
 
+    // Check if product already exists
+    const existing = db.prepare('SELECT * FROM products WHERE LOWER(TRIM(name)) = LOWER(TRIM(?))').get(name.trim());
+    if (existing) {
+      const oldRate = Number(existing.default_bought_rate || 0);
+      const newRate = Number(default_bought_rate || 0);
+      let calculatedRate = oldRate;
+      if (newRate > 0) {
+        if (oldRate > 0 && oldRate !== newRate) {
+          calculatedRate = Math.round(((oldRate + newRate) / 2) * 100) / 100;
+        } else {
+          calculatedRate = newRate;
+        }
+      }
+      db.prepare(`
+        UPDATE products
+        SET category = COALESCE(?, category),
+            hsn_code = COALESCE(?, hsn_code),
+            unit = COALESCE(?, unit),
+            default_sell_rate = CASE WHEN ? > 0 THEN ? ELSE default_sell_rate END,
+            default_bought_rate = ?,
+            gst_rate = COALESCE(?, gst_rate),
+            stock_qty = stock_qty + ?
+        WHERE id = ?
+      `).run(
+        category || existing.category,
+        hsn_code || existing.hsn_code,
+        unit || existing.unit,
+        Number(default_sell_rate || 0),
+        Number(default_sell_rate || 0),
+        calculatedRate,
+        gst_rate !== undefined ? Number(gst_rate) : existing.gst_rate,
+        Number(stock_qty || 0),
+        existing.id
+      );
+
+      const product = db.prepare('SELECT * FROM products WHERE id = ?').get(existing.id);
+      return res.status(200).json(product);
+    }
+
     const info = db.prepare(`
       INSERT INTO products (name, category, hsn_code, unit, default_sell_rate, default_bought_rate, gst_rate, stock_qty)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -706,7 +745,7 @@ app.post('/api/suppliers/:id/purchases', (req, res) => {
       combinedNotes || ''
     );
 
-    // 1. Update Product Inventory Stock & Latest Bought Cost
+    // 1. Update Product Inventory Stock & Latest Bought Cost (Averaged if price changed)
     let matchedProduct = null;
     if (product_id) {
       matchedProduct = db.prepare('SELECT * FROM products WHERE id = ?').get(product_id);
@@ -716,12 +755,35 @@ app.post('/api/suppliers/:id/purchases', (req, res) => {
     }
 
     if (matchedProduct) {
+      const oldBought = Number(matchedProduct.default_bought_rate || 0);
+      const newBought = Number(rate || 0);
+      let calculatedBoughtRate = oldBought;
+
+      if (newBought > 0) {
+        if (oldBought > 0 && oldBought !== newBought) {
+          // Take average of old bought price and new bought price
+          calculatedBoughtRate = Math.round(((oldBought + newBought) / 2.0) * 100) / 100;
+        } else {
+          calculatedBoughtRate = newBought;
+        }
+      }
+
       db.prepare(`
         UPDATE products 
         SET stock_qty = stock_qty + ?,
-            default_bought_rate = CASE WHEN ? > 0 THEN ? ELSE default_bought_rate END
+            default_bought_rate = ?
         WHERE id = ?
-      `).run(qty, rate, rate, matchedProduct.id);
+      `).run(qty, calculatedBoughtRate, matchedProduct.id);
+    } else if (product_name && product_name.trim()) {
+      try {
+        const infoProd = db.prepare(`
+          INSERT INTO products (name, category, hsn_code, unit, default_sell_rate, default_bought_rate, gst_rate, stock_qty)
+          VALUES (?, 'Steel', '7214', ?, 0, ?, ?, ?)
+        `).run(product_name.trim(), unit || 'Tons', rate, gRate || 18, qty);
+        matchedProduct = db.prepare('SELECT * FROM products WHERE id = ?').get(infoProd.lastInsertRowid);
+      } catch (e) {
+        // ignore duplicate
+      }
     }
 
     // 2. Ledger entry for bought price / expense
@@ -842,9 +904,13 @@ app.get('/api/bills', (req, res) => {
                JOIN suppliers s ON sp.supplier_id = s.id 
                WHERE LOWER(TRIM(sp.product_name)) = LOWER(TRIM(b.product_name)) 
                ORDER BY sp.id DESC LIMIT 1
-             ), 'Direct / Steel Mill') as supplier_name
+             ), 'Direct / Steel Mill') as supplier_name,
+             COALESCE(p.default_bought_rate, (
+               SELECT p2.default_bought_rate FROM products p2 WHERE LOWER(TRIM(p2.name)) = LOWER(TRIM(b.product_name)) LIMIT 1
+             ), b.bought_price_per_unit, 0) as catalog_bought_rate
       FROM bills b
       LEFT JOIN vehicles v ON b.vehicle_id = v.id OR (b.vehicle_number IS NOT NULL AND b.vehicle_number != '' AND UPPER(REPLACE(TRIM(v.vehicle_number), ' ', '')) = UPPER(REPLACE(TRIM(b.vehicle_number), ' ', '')))
+      LEFT JOIN products p ON b.product_id = p.id
       WHERE 1=1
     `;
     const params = [];
@@ -1305,9 +1371,7 @@ app.get('/api/accounts', (req, res) => {
     // Net Profit = Revenue - Bought
     const totalRevenue = salesRow.totalRevenue;
     const costOfGoods = totalStockBought; // Bought price from stock inventory
-    const netProfit = Math.round(totalRevenue - costOfGoods);
-    const grossProfit = netProfit;
-    const netProfitMargin = totalRevenue > 0 ? ((netProfit / totalRevenue) * 100).toFixed(1) : 0;
+    const grossProfit = Math.round(totalRevenue - costOfGoods);
 
     // Vehicle Charges (Diesel, Maintenance & Service, Other vehicle expenses)
     const vehicleCharges = vehDiesel + vehService + vehOther;
@@ -1324,15 +1388,15 @@ app.get('/api/accounts', (req, res) => {
     const totalGstPayable = netCgstPayable + netSgstPayable;
     const totalTds = salesRow.totalTdsOutput + purchasesRow.totalTdsInput;
 
-    // User's exact formula:
-    // profit = total revenue - (bought price + cgst + sgst + tds + diesel and other vehicle charges + sum of salary of the employees)
+    // Deductions & Taxes
     const cgstDeduction = netCgstPayable > 0 ? netCgstPayable : cgstOutput;
     const sgstDeduction = netSgstPayable > 0 ? netSgstPayable : sgstOutput;
     const tdsDeduction = totalTds;
     const totalTaxes = cgstDeduction + sgstDeduction + tdsDeduction;
 
     const totalDeductions = costOfGoods + cgstDeduction + sgstDeduction + tdsDeduction + vehicleCharges + totalSalaries;
-    const netProfit = Math.round(totalRevenue - totalDeductions);
+    // Net profit = Revenue - Bought (User Specification)
+    const netProfit = Math.round(totalRevenue - costOfGoods);
     const netProfitMargin = totalRevenue > 0 ? ((netProfit / totalRevenue) * 100).toFixed(1) : 0;
 
     // Recent Ledger Entries
@@ -1356,7 +1420,7 @@ app.get('/api/accounts', (req, res) => {
       GROUP BY product_name
       ORDER BY revenue DESC
       LIMIT 6
-    `).all(...(from_date && to_date ? [from_date, to_date] : []));
+    `).all(...billParams);
 
     // 2. Timeline Analytics (Adapted to Range: 1w, 30d, 3m, 6m, 1y, 5y, all)
     let timelineType = 'monthly';
@@ -1388,7 +1452,7 @@ app.get('/api/accounts', (req, res) => {
       `).all(from_date, to_date).map(s => [s.date, s.total]));
 
       const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-      const mNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+      const mNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
       for (let i = numDays - 1; i >= 0; i--) {
         const d = new Date();
@@ -1399,8 +1463,8 @@ app.get('/api/accounts', (req, res) => {
         const sExp = salByDay[dayStr] || 0;
         const deductions = s.cost + s.cgst + s.sgst + s.tds + vExp + sExp;
         const profit = Math.round(s.revenue - deductions);
-        
-        const label = numDays === 7 
+
+        const label = numDays === 7
           ? `${dayNames[d.getDay()]} ${d.getDate()}`
           : `${d.getDate()} ${mNames[d.getMonth()]}`;
 
@@ -1480,7 +1544,7 @@ app.get('/api/accounts', (req, res) => {
       `).all().map(s => [s.month, s.total]));
 
       const now = new Date();
-      const mNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+      const mNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
       for (let i = numMonths - 1; i >= 0; i--) {
         const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
@@ -1509,15 +1573,15 @@ app.get('/api/accounts', (req, res) => {
     // 3. Collections Breakdown (Cash, UPI, Bank Transfer, Total Credit)
     const cashFromBills = db.prepare(`
       SELECT COALESCE(SUM(amount_received), 0) as total FROM bills WHERE payment_mode = 'Cash' AND ${billFilter}
-    `).get(...(from_date && to_date ? [from_date, to_date] : [])).total;
+    `).get(...billParams).total;
 
     const upiFromBills = db.prepare(`
       SELECT COALESCE(SUM(amount_received), 0) as total FROM bills WHERE payment_mode = 'UPI' AND ${billFilter}
-    `).get(...(from_date && to_date ? [from_date, to_date] : [])).total;
+    `).get(...billParams).total;
 
     const bankFromBills = db.prepare(`
       SELECT COALESCE(SUM(amount_received), 0) as total FROM bills WHERE payment_mode IN ('Bank Transfer', 'NEFT', 'Cheque') AND ${billFilter}
-    `).get(...(from_date && to_date ? [from_date, to_date] : [])).total;
+    `).get(...billParams).total;
 
     let custPayFilter = '1=1';
     if (from_date && to_date) custPayFilter = 'date BETWEEN ? AND ?';
@@ -1538,11 +1602,11 @@ app.get('/api/accounts', (req, res) => {
     const totalUpi = upiFromBills + upiFromCust;
     const totalBank = bankFromBills + bankFromCust;
     const totalCollected = totalCash + totalUpi + totalBank;
-    
+
     // Credit from bills in period, plus overall customer dues
     const billCreditPeriod = db.prepare(`
       SELECT COALESCE(SUM(balance_due), 0) as total FROM bills WHERE ${billFilter}
-    `).get(...(from_date && to_date ? [from_date, to_date] : [])).total;
+    `).get(...billParams).total;
 
     const collections = {
       cash: totalCash,
@@ -1636,6 +1700,9 @@ if (fs.existsSync(distPath)) {
   });
 }
 
-app.listen(PORT, () => {
-  console.log(`[Jazlan Server] Billing & Accounts API running on http://localhost:${PORT}`);
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`[Jazlan Server] Billing & Accounts API running on http://127.0.0.1:${PORT}`);
 });
+
+module.exports = app;
+

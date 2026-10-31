@@ -12,13 +12,15 @@ import {
   AlertCircle,
   Download,
   Truck,
-  RotateCcw
+  RotateCcw,
+  Eye
 } from 'lucide-react';
 import InvoicePrintModal from '../components/InvoicePrintModal';
 
 export default function InvoicesPage({ onInvoiceUpdated }) {
   const [bills, setBills] = useState([]);
   const [vehicles, setVehicles] = useState([]);
+  const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
@@ -98,7 +100,24 @@ export default function InvoicesPage({ onInvoiceUpdated }) {
       .then(r => r.json())
       .then(data => setVehicles(data || []))
       .catch(err => console.error('Error fetching vehicles:', err));
+
+    fetch('/api/products')
+      .then(r => r.json())
+      .then(data => setProducts(data || []))
+      .catch(err => console.error('Error fetching products:', err));
   }, []);
+
+  const getCatalogBoughtRate = (bill) => {
+    if (!bill) return 0;
+    const matched = products.find(p => p.id === bill.product_id || (p.name && bill.product_name && p.name.trim().toLowerCase() === bill.product_name.trim().toLowerCase()));
+    if (matched && Number(matched.default_bought_rate) > 0) {
+      return Number(matched.default_bought_rate);
+    }
+    if (bill.catalog_bought_rate !== undefined && Number(bill.catalog_bought_rate) > 0) {
+      return Number(bill.catalog_bought_rate);
+    }
+    return Number(bill.bought_price_per_unit || 0);
+  };
 
   useEffect(() => {
     fetchBills();
@@ -139,15 +158,18 @@ export default function InvoicesPage({ onInvoiceUpdated }) {
       'Date',
       'Time',
       'Customer',
-      'Product',
+      'Material',
       'Qty (Kg)',
       'Qty (Tons)',
-      'Rate (Rs/Ton)',
+      'Selling Rate (Rs/Ton)',
+      'Catalog Bought Rate (Rs/Ton)',
+      'Total Bought Cost (Rs)',
       'Before Tax (Rs)',
       '2% TDS (Rs)',
       'CGST (Rs)',
       'SGST (Rs)',
       'Total Bill Amount (Rs)',
+      'Profit (Rs)',
       'Supplier',
       'Transferred Amount (Rs)',
       'Pending Balance (Rs)',
@@ -165,15 +187,29 @@ export default function InvoicesPage({ onInvoiceUpdated }) {
     };
 
     const rows = bills.map((b) => {
-      const qtyTons = Number(b.quantity) || 0;
-      const qtyKg = Math.round(qtyTons * 1000);
+      const isKg = b.unit?.toLowerCase() === 'kg';
+      const qtyKg = isKg 
+        ? Math.round(Number(b.quantity) || 0) 
+        : Math.round((Number(b.quantity) || 0) * 1000);
+      const qtyTons = isKg 
+        ? Number(((Number(b.quantity) || 0) / 1000).toFixed(3)) 
+        : (Number(b.quantity) || 0);
+
       const itemRate = Number(b.rate) || 0;
       const rent = Number(b.rent_transport) || 0;
       const beforeTax = (Number(b.subtotal) || (qtyTons * itemRate)) + rent;
-      const tdsVal = Number(b.tds_amount) || Math.round((beforeTax * 2) / 100);
+      const tdsVal = Number(b.tds_amount) > 0 
+        ? Number(b.tds_amount) 
+        : Math.round((beforeTax * (Number(b.tds_rate) || 2)) / 100);
       const cgstVal = Number(b.cgst_amount) || Math.round((beforeTax * 0.09));
       const sgstVal = Number(b.sgst_amount) || Math.round((beforeTax * 0.09));
       const totalAmt = Number(b.total_amount) || (beforeTax + cgstVal + sgstVal - tdsVal);
+
+      // Bought cost extracted from product catalog & profit: total bill amount - (tds + cgst + sgst + bought cost)
+      const catalogRate = getCatalogBoughtRate(b);
+      const totalBoughtCost = Math.round(qtyTons * catalogRate);
+      const invoiceProfit = Math.round(totalAmt - (tdsVal + cgstVal + sgstVal + totalBoughtCost));
+
       const transferred = Number(b.amount_received) || 0;
       const pending = Number(b.balance_due) || Math.max(0, totalAmt - transferred);
       const resolvedDriver = b.driver_name || vehicles.find(v => (b.vehicle_id && v.id === b.vehicle_id) || (b.vehicle_number && v.vehicle_number && v.vehicle_number.replace(/\s+/g, '').toUpperCase() === b.vehicle_number.replace(/\s+/g, '').toUpperCase()))?.driver_name || '—';
@@ -187,11 +223,14 @@ export default function InvoicesPage({ onInvoiceUpdated }) {
         qtyKg,
         qtyTons,
         itemRate,
+        catalogRate,
+        totalBoughtCost,
         beforeTax,
         tdsVal,
         cgstVal,
         sgstVal,
         totalAmt,
+        invoiceProfit,
         escapeCsv(b.supplier_name || 'Direct / Steel Mill'),
         transferred,
         pending,
@@ -567,19 +606,22 @@ export default function InvoicesPage({ onInvoiceUpdated }) {
         </div>
 
         <div className="table-container" style={{ border: 'none', overflowX: 'auto' }}>
-          <table className="data-table" style={{ width: '100%', minWidth: '1500px' }}>
+          <table className="data-table" style={{ width: '100%', minWidth: '1850px' }}>
             <thead>
               <tr>
                 <th style={{ whiteSpace: 'nowrap', padding: '10px 12px' }}>Bill No.</th>
                 <th style={{ whiteSpace: 'nowrap', padding: '10px 12px' }}>Date & Time</th>
                 <th style={{ whiteSpace: 'nowrap', padding: '10px 12px' }}>Customer</th>
-                <th style={{ whiteSpace: 'nowrap', padding: '10px 12px' }}>Product & Qty (kg)</th>
+                <th style={{ whiteSpace: 'nowrap', padding: '10px 12px' }}>Material</th>
+                <th style={{ whiteSpace: 'nowrap', padding: '10px 12px' }}>Quantity</th>
                 <th style={{ whiteSpace: 'nowrap', padding: '10px 12px', textAlign: 'right' }}>Rate (₹)</th>
+                <th style={{ whiteSpace: 'nowrap', padding: '10px 12px', textAlign: 'right' }}>Bought Cost (₹)</th>
                 <th style={{ whiteSpace: 'nowrap', padding: '10px 12px', textAlign: 'right' }}>Before Tax (₹)</th>
                 <th style={{ whiteSpace: 'nowrap', padding: '10px 12px', textAlign: 'right' }}>2% TDS (₹)</th>
                 <th style={{ whiteSpace: 'nowrap', padding: '10px 12px', textAlign: 'right' }}>CGST (₹)</th>
                 <th style={{ whiteSpace: 'nowrap', padding: '10px 12px', textAlign: 'right' }}>SGST (₹)</th>
                 <th style={{ whiteSpace: 'nowrap', padding: '10px 12px', textAlign: 'right' }}>Total Bill Amount (₹)</th>
+                <th style={{ whiteSpace: 'nowrap', padding: '10px 12px', textAlign: 'right' }}>Profit (₹)</th>
                 <th style={{ whiteSpace: 'nowrap', padding: '10px 12px' }}>Supplier</th>
                 <th style={{ whiteSpace: 'nowrap', padding: '10px 12px', textAlign: 'right' }}>Transferred Amount (₹)</th>
                 <th style={{ whiteSpace: 'nowrap', padding: '10px 12px', textAlign: 'right' }}>Pending Balance (₹)</th>
@@ -592,21 +634,33 @@ export default function InvoicesPage({ onInvoiceUpdated }) {
             <tbody>
               {bills.length === 0 ? (
                 <tr>
-                  <td colSpan="17" style={{ textAlign: 'center', padding: '36px', color: '#94a3b8' }}>
+                  <td colSpan="20" style={{ textAlign: 'center', padding: '36px', color: '#94a3b8' }}>
                     {loading ? 'Loading invoices...' : 'No invoices found matching your criteria.'}
                   </td>
                 </tr>
               ) : (
                 bills.map((bill) => {
-                  const qtyInKg = bill.unit?.toLowerCase() === 'kg' 
+                  const isKg = bill.unit?.toLowerCase() === 'kg';
+                  const qtyInKg = isKg 
                     ? Math.round(Number(bill.quantity) || 0) 
                     : Math.round((Number(bill.quantity) || 0) * 1000);
+                  const qtyInTons = isKg 
+                    ? Number(((Number(bill.quantity) || 0) / 1000).toFixed(3)) 
+                    : (Number(bill.quantity) || 0);
+
+                  const catalogRate = getCatalogBoughtRate(bill);
+                  const totalBoughtCost = Math.round(qtyInTons * catalogRate);
+
                   const beforeTax = Math.round((Number(bill.subtotal) || 0) + (Number(bill.rent_transport) || 0));
                   const tdsVal = Number(bill.tds_amount) > 0 
                     ? Number(bill.tds_amount) 
                     : Math.round((beforeTax * (Number(bill.tds_rate) || 2)) / 100);
-                  const cgstVal = Number(bill.cgst_amount) || Math.round((beforeTax * 0.08));
-                  const sgstVal = Number(bill.sgst_amount) || Math.round((beforeTax * 0.08));
+                  const cgstVal = Number(bill.cgst_amount) || Math.round((beforeTax * 0.09));
+                  const sgstVal = Number(bill.sgst_amount) || Math.round((beforeTax * 0.09));
+                  const totalAmt = Number(bill.total_amount) || (beforeTax + cgstVal + sgstVal - tdsVal);
+
+                  // Individual invoice profit: total bill amount - (tds + cgst + sgst + bought cost)
+                  const invoiceProfit = Math.round(totalAmt - (tdsVal + cgstVal + sgstVal + totalBoughtCost));
 
                   return (
                     <tr key={bill.id}>
@@ -633,48 +687,78 @@ export default function InvoicesPage({ onInvoiceUpdated }) {
                         <div style={{ fontWeight: 700, color: '#0f172a' }}>{bill.customer_name}</div>
                       </td>
 
-                      {/* 4. PRODUCT & QTY (IN KG FOR EXACT WEIGHT) */}
+                      {/* 4. MATERIAL */}
                       <td style={{ whiteSpace: 'nowrap', padding: '10px 12px' }}>
                         <div style={{ fontWeight: 700, color: '#0f172a' }}>{bill.product_name}</div>
-                        <div style={{ fontSize: '12px', color: '#059669', fontWeight: 800, fontFamily: 'monospace' }}>
+                      </td>
+
+                      {/* 5. QUANTITY (BOTH KGS & TONS) */}
+                      <td style={{ whiteSpace: 'nowrap', padding: '10px 12px' }}>
+                        <div style={{ fontSize: '12.5px', color: '#059669', fontWeight: 800, fontFamily: 'monospace' }}>
                           {qtyInKg.toLocaleString('en-IN')} kg
-                          <span style={{ fontSize: '10.5px', color: '#64748b', fontWeight: 500, marginLeft: '4px' }}>
-                            ({bill.quantity} {bill.unit || 'Tons'})
-                          </span>
+                        </div>
+                        <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 600 }}>
+                          {qtyInTons} {bill.unit || 'Tons'}
                         </div>
                       </td>
 
-                      {/* 5. RATE */}
+                      {/* 6. RATE */}
                       <td style={{ whiteSpace: 'nowrap', padding: '10px 12px', textAlign: 'right', fontWeight: 700 }} className="font-mono">
                         ₹{(Number(bill.rate) || 0).toLocaleString('en-IN')}
                       </td>
 
-                      {/* 6. BEFORE TAX */}
+                      {/* 7. BOUGHT COST (FROM PRODUCT CATALOG) */}
+                      <td style={{ whiteSpace: 'nowrap', padding: '10px 12px', textAlign: 'right' }} className="font-mono">
+                        <div style={{ fontWeight: 700, color: '#1e293b' }}>
+                          ₹{totalBoughtCost.toLocaleString('en-IN')}
+                        </div>
+                        <div style={{ fontSize: '10.5px', color: '#64748b' }}>
+                          (@ ₹{catalogRate.toLocaleString('en-IN')}/T)
+                        </div>
+                      </td>
+
+                      {/* 8. BEFORE TAX */}
                       <td style={{ whiteSpace: 'nowrap', padding: '10px 12px', textAlign: 'right', fontWeight: 700, color: '#334155' }} className="font-mono">
                         ₹{beforeTax.toLocaleString('en-IN')}
                       </td>
 
-                      {/* 7. 2% TDS */}
+                      {/* 9. 2% TDS */}
                       <td style={{ whiteSpace: 'nowrap', padding: '10px 12px', textAlign: 'right', color: '#ea580c', fontWeight: 700 }} className="font-mono">
                         ₹{tdsVal.toLocaleString('en-IN')}
                       </td>
 
-                      {/* 8. CGST */}
+                      {/* 10. CGST */}
                       <td style={{ whiteSpace: 'nowrap', padding: '10px 12px', textAlign: 'right', color: '#4f46e5', fontWeight: 700 }} className="font-mono">
                         ₹{cgstVal.toLocaleString('en-IN')}
                       </td>
 
-                      {/* 9. SGST */}
+                      {/* 11. SGST */}
                       <td style={{ whiteSpace: 'nowrap', padding: '10px 12px', textAlign: 'right', color: '#7c3aed', fontWeight: 700 }} className="font-mono">
                         ₹{sgstVal.toLocaleString('en-IN')}
                       </td>
 
-                      {/* 10. TOTAL BILL AMOUNT */}
+                      {/* 12. TOTAL BILL AMOUNT */}
                       <td style={{ whiteSpace: 'nowrap', padding: '10px 12px', textAlign: 'right', fontWeight: 800, color: '#064e3b' }} className="font-mono">
-                        ₹{(Number(bill.total_amount) || 0).toLocaleString('en-IN')}
+                        ₹{totalAmt.toLocaleString('en-IN')}
                       </td>
 
-                      {/* 11. SUPPLIER */}
+                      {/* 13. PROFIT */}
+                      <td style={{ whiteSpace: 'nowrap', padding: '10px 12px', textAlign: 'right' }} className="font-mono">
+                        <span style={{ 
+                          fontWeight: 800, 
+                          fontSize: '12px',
+                          color: invoiceProfit >= 0 ? '#15803d' : '#b91c1c',
+                          backgroundColor: invoiceProfit >= 0 ? '#f0fdf4' : '#fef2f2',
+                          border: `1px solid ${invoiceProfit >= 0 ? '#bbf7d0' : '#fecaca'}`,
+                          padding: '3px 8px',
+                          borderRadius: '5px',
+                          display: 'inline-block'
+                        }}>
+                          {invoiceProfit >= 0 ? `+₹${invoiceProfit.toLocaleString('en-IN')}` : `-₹${Math.abs(invoiceProfit).toLocaleString('en-IN')}`}
+                        </span>
+                      </td>
+
+                      {/* 14. SUPPLIER */}
                       <td style={{ whiteSpace: 'nowrap', padding: '10px 12px' }}>
                         <span style={{ fontSize: '12px', fontWeight: 600, color: '#475569' }}>
                           {bill.supplier_name || 'Direct / Internal'}
@@ -717,11 +801,24 @@ export default function InvoicesPage({ onInvoiceUpdated }) {
                       <td style={{ whiteSpace: 'nowrap', padding: '10px 12px', textAlign: 'center' }}>
                         <div style={{ display: 'inline-flex', gap: '5px' }}>
                           <button 
+                            type="button"
                             className="btn btn-secondary btn-sm"
+                            style={{ padding: '3px 8px', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px' }}
+                            onClick={() => handleOpenPrint(bill)}
+                            title="View Tax Invoice Details"
+                          >
+                            <Eye size={12} color="#0284c7" />
+                            View
+                          </button>
+
+                          <button 
+                            type="button"
+                            className="btn btn-secondary btn-sm"
+                            style={{ padding: '3px 8px', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px' }}
                             onClick={() => handleOpenPrint(bill)}
                             title="Print Tax Invoice"
                           >
-                            <Printer size={13} />
+                            <Printer size={12} color="#059669" />
                             Print
                           </button>
 

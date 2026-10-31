@@ -183,12 +183,22 @@ export default function ProductsPage({ onProductUpdated }) {
         })
       });
 
+      const data = await res.json();
       if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || 'Failed to record stock inward');
+        throw new Error(data?.error || 'Failed to record stock inward');
       }
 
-      alert(`Inward Stock of ${qNum} Tons recorded!\n• Material: ${stockInProduct?.name}\n• Total: ₹${sTotalVal.toLocaleString('en-IN')}\n• Paid: ₹${Number(stockInPaidAmount || 0).toLocaleString('en-IN')}\n• Supplier Due: ₹${sDueVal.toLocaleString('en-IN')}`);
+      const oldBought = Number(stockInProduct?.default_bought_rate || 0);
+      const newBought = Number(stockInRate || 0);
+      let avgInfo = '';
+      if (oldBought > 0 && newBought > 0 && oldBought !== newBought) {
+        const avg = Math.round(((oldBought + newBought) / 2.0) * 100) / 100;
+        avgInfo = `\n• Catalog Bought Cost averaged to: ₹${avg.toLocaleString('en-IN')} (old ₹${oldBought.toLocaleString('en-IN')} + new ₹${newBought.toLocaleString('en-IN')}) / 2`;
+      } else if (newBought > 0) {
+        avgInfo = `\n• Catalog Bought Cost: ₹${newBought.toLocaleString('en-IN')}`;
+      }
+
+      alert(`Inward Stock of ${qNum} Tons recorded!\n• Material: ${stockInProduct?.name}\n• Total: ₹${sTotalVal.toLocaleString('en-IN')}\n• Paid: ₹${Number(stockInPaidAmount || 0).toLocaleString('en-IN')}\n• Supplier Due: ₹${sDueVal.toLocaleString('en-IN')}${avgInfo}`);
       setShowStockInModal(false);
       fetchProducts();
       if (onProductUpdated) onProductUpdated();
@@ -551,6 +561,19 @@ export default function ProductsPage({ onProductUpdated }) {
                     onChange={(e) => setStockInRate(e.target.value)}
                     required
                   />
+                  {(() => {
+                    const oldRate = Number(stockInProduct?.default_bought_rate || 0);
+                    const newRate = Number(stockInRate || 0);
+                    if (oldRate > 0 && newRate > 0 && oldRate !== newRate) {
+                      const avg = Math.round(((oldRate + newRate) / 2.0) * 100) / 100;
+                      return (
+                        <div style={{ marginTop: '5px', fontSize: '11px', color: '#059669', fontWeight: 600, lineHeight: 1.3 }}>
+                          ⚡ Catalog bought cost updates to: <strong>₹{avg.toLocaleString('en-IN')}</strong> (avg of ₹{oldRate.toLocaleString('en-IN')} & ₹{newRate.toLocaleString('en-IN')})
+                        </div>
+                      );
+                    }
+                    return null;
+                  })()}
                 </div>
               </div>
 

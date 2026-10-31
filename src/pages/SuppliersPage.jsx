@@ -1379,6 +1379,20 @@ export default function SuppliersPage({ onSupplierUpdated }) {
                     onChange={(e) => setPBoughtRate(e.target.value)}
                     required
                   />
+                  {(() => {
+                    const selProd = products.find(p => p.id === Number(pProductId)) || products.find(p => p.name === pProduct);
+                    const oldRate = Number(selProd?.default_bought_rate || 0);
+                    const newRate = Number(pBoughtRate || 0);
+                    if (oldRate > 0 && newRate > 0 && oldRate !== newRate) {
+                      const avg = Math.round(((oldRate + newRate) / 2.0) * 100) / 100;
+                      return (
+                        <div style={{ marginTop: '5px', fontSize: '11px', color: '#059669', fontWeight: 600, lineHeight: 1.3 }}>
+                          ⚡ Catalog bought cost updates to: <strong>₹{avg.toLocaleString('en-IN')}</strong> (avg of ₹{oldRate.toLocaleString('en-IN')} & ₹{newRate.toLocaleString('en-IN')})
+                        </div>
+                      );
+                    }
+                    return null;
+                  })()}
                 </div>
               </div>
 
